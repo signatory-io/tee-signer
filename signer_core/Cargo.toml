@@ -1,0 +1,23 @@
+[package]
+name = "signer_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ecdsa = { version = "0.16", features = ["serde"] }
+ed25519 = { version = "2.2", features = ["serde", "zeroize"] }
+ed25519-dalek = { version = "2.1", features = ["serde", "rand_core"] }
+k256 = "0.13"
+p256 = "0.13"
+serde = { version = "1.0", features = ["derive"] }
+signature = "2.2"
+elliptic-curve = { version = "0.13", features = ["serde"] }
+generic-array = { version = "0.14", features = ["serde"] }
+zeroize = { version = "1.8", features = ["derive"] }
+blst = { version = "0.3", features = ["serde", "serde-secret"] }
+subtle = "2.6"
+serdect = "0.2"
+ciborium = "0.2"
+rand_core = "0.6"
+libc = "0.2"
+num = "0.4"
