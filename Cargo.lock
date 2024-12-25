@@ -624,7 +624,6 @@ dependencies = [
  "serdect",
  "signature",
  "subtle",
- "zeroize",
 ]
 
 [[package]]

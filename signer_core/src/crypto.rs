@@ -1,13 +1,11 @@
 use blake2::{digest, Blake2b, Digest};
 use blst::min_pk;
-use ecdsa::hazmat::SignPrimitive;
-use elliptic_curve::{generic_array, scalar::Scalar, CurveArithmetic, FieldBytes, PrimeCurve};
+use elliptic_curve::FieldBytes;
 use k256::Secp256k1;
 use p256::NistP256;
 use serde::{Deserialize, Serialize};
 use signature::{DigestSigner, Signer, Verifier};
 use std::fmt::Debug;
-use zeroize::ZeroizeOnDrop;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum KeyType {
@@ -64,19 +62,10 @@ pub trait KeyPair: Debug {
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error>;
 }
 
-#[derive(Debug, ZeroizeOnDrop)]
-pub struct ECDSASigningKey<C>(ecdsa::SigningKey<C>)
-where
-    C: PrimeCurve + CurveArithmetic,
-    Scalar<C>: elliptic_curve::ops::Invert<Output = subtle::CtOption<Scalar<C>>> + SignPrimitive<C>,
-    ecdsa::SignatureSize<C>: generic_array::ArrayLength<u8>;
+#[derive(Debug)]
+pub struct ECDSASigningKey<C>(C);
 
-impl<C> Serialize for ECDSASigningKey<C>
-where
-    C: PrimeCurve + CurveArithmetic,
-    Scalar<C>: elliptic_curve::ops::Invert<Output = subtle::CtOption<Scalar<C>>> + SignPrimitive<C>,
-    ecdsa::SignatureSize<C>: generic_array::ArrayLength<u8>,
-{
+impl Serialize for ECDSASigningKey<ecdsa::SigningKey<Secp256k1>> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -85,17 +74,21 @@ where
     }
 }
 
-impl<'de, C> Deserialize<'de> for ECDSASigningKey<C>
-where
-    C: PrimeCurve + CurveArithmetic,
-    Scalar<C>: elliptic_curve::ops::Invert<Output = subtle::CtOption<Scalar<C>>> + SignPrimitive<C>,
-    ecdsa::SignatureSize<C>: generic_array::ArrayLength<u8>,
-{
+impl Serialize for ECDSASigningKey<ecdsa::SigningKey<NistP256>> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serdect::array::serialize_hex_upper_or_bin(&self.0.to_bytes(), serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ECDSASigningKey<ecdsa::SigningKey<Secp256k1>> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let mut bytes = FieldBytes::<C>::default();
+        let mut bytes = FieldBytes::<Secp256k1>::default();
         serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
         match ecdsa::SigningKey::from_bytes(&bytes) {
             Ok(val) => Ok(Self(val)),
@@ -104,13 +97,22 @@ where
     }
 }
 
-impl<C> core::ops::Deref for ECDSASigningKey<C>
-where
-    C: PrimeCurve + CurveArithmetic,
-    Scalar<C>: elliptic_curve::ops::Invert<Output = subtle::CtOption<Scalar<C>>> + SignPrimitive<C>,
-    ecdsa::SignatureSize<C>: generic_array::ArrayLength<u8>,
-{
-    type Target = ecdsa::SigningKey<C>;
+impl<'de> Deserialize<'de> for ECDSASigningKey<ecdsa::SigningKey<NistP256>> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut bytes = FieldBytes::<NistP256>::default();
+        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
+        match ecdsa::SigningKey::from_bytes(&bytes) {
+            Ok(val) => Ok(Self(val)),
+            Err(err) => Err(serde::de::Error::custom(err)),
+        }
+    }
+}
+
+impl<C> core::ops::Deref for ECDSASigningKey<C> {
+    type Target = C;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -167,7 +169,7 @@ impl<'de> Deserialize<'de> for BLSPublicKey {
     }
 }
 
-impl KeyPair for ECDSASigningKey<Secp256k1> {
+impl KeyPair for ECDSASigningKey<ecdsa::SigningKey<Secp256k1>> {
     fn public_key(&self) -> PublicKey {
         PublicKey::Secp256k1(self.verifying_key().clone())
     }
@@ -178,7 +180,7 @@ impl KeyPair for ECDSASigningKey<Secp256k1> {
     }
 }
 
-impl KeyPair for ECDSASigningKey<NistP256> {
+impl KeyPair for ECDSASigningKey<ecdsa::SigningKey<NistP256>> {
     fn public_key(&self) -> PublicKey {
         PublicKey::NistP256(self.verifying_key().clone())
     }
@@ -212,8 +214,8 @@ impl KeyPair for min_pk::SecretKey {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PrivateKey {
-    Secp256k1(ECDSASigningKey<Secp256k1>),
-    NistP256(ECDSASigningKey<NistP256>),
+    Secp256k1(ECDSASigningKey<ecdsa::SigningKey<Secp256k1>>),
+    NistP256(ECDSASigningKey<ecdsa::SigningKey<NistP256>>),
     Ed25519(ed25519_dalek::SigningKey),
     BLS(min_pk::SecretKey),
 }
