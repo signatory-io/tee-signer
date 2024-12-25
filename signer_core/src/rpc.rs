@@ -1,4 +1,4 @@
-use crate::signer::KeyType;
+use crate::crypto::KeyType;
 use serde::{Deserialize, Serialize};
 
 pub mod client;

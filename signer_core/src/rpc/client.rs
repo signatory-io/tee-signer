@@ -1,5 +1,5 @@
+use crate::crypto::{KeyType, PublicKey, Signature};
 use crate::rpc::{Error as RPCError, Request, Result as RPCResult};
-use crate::signer::{KeyType, PublicKey, Signature};
 use crate::{TryFromCBOR, TryIntoCBOR};
 use serde::Serialize;
 use std::io::{Read, Write};

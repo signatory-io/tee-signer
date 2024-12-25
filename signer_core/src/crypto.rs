@@ -1,10 +1,11 @@
+use blake2::{digest, Blake2b, Digest};
 use blst::min_pk;
 use ecdsa::hazmat::SignPrimitive;
 use elliptic_curve::{generic_array, scalar::Scalar, CurveArithmetic, FieldBytes, PrimeCurve};
 use k256::Secp256k1;
 use p256::NistP256;
 use serde::{Deserialize, Serialize};
-use signature::Signer;
+use signature::{DigestSigner, Signer, Verifier};
 use std::fmt::Debug;
 use zeroize::ZeroizeOnDrop;
 
@@ -115,8 +116,25 @@ where
     }
 }
 
+pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
+
+const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
+
 #[derive(Debug)]
 pub struct BLSPublicKey(min_pk::PublicKey);
+
+impl Verifier<BLSSignature> for BLSPublicKey {
+    fn verify(&self, msg: &[u8], signature: &BLSSignature) -> Result<(), signature::Error> {
+        let aug = self.to_bytes();
+        match signature.0.verify(true, msg, BLS_DST, &aug, self, true) {
+            blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
+            err => {
+                let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::BLS(err));
+                Err(b.into())
+            }
+        }
+    }
+}
 
 impl core::ops::Deref for BLSPublicKey {
     type Target = min_pk::PublicKey;
@@ -154,7 +172,9 @@ impl KeyPair for ECDSASigningKey<Secp256k1> {
         PublicKey::Secp256k1(self.verifying_key().clone())
     }
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        Ok(Signature::Secp256k1(self.0.try_sign(msg)?))
+        let mut d = Blake2b256::new();
+        d.update(msg);
+        Ok(Signature::Secp256k1(self.0.try_sign_digest(d)?))
     }
 }
 
@@ -163,7 +183,9 @@ impl KeyPair for ECDSASigningKey<NistP256> {
         PublicKey::NistP256(self.verifying_key().clone())
     }
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        Ok(Signature::NistP256(self.0.try_sign(msg)?))
+        let mut d = Blake2b256::new();
+        d.update(msg);
+        Ok(Signature::NistP256(self.0.try_sign_digest(d)?))
     }
 }
 
@@ -172,7 +194,9 @@ impl KeyPair for ed25519_dalek::SigningKey {
         PublicKey::Ed25519(self.verifying_key().clone())
     }
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        Ok(Signature::Ed25519(Signer::try_sign(self, msg)?))
+        // Tezos uses Blake2b pre-hashing in conjunction with regular Ed25519/SHA512
+        let d = Blake2b256::digest(msg);
+        Ok(Signature::Ed25519(Signer::try_sign(self, &d)?))
     }
 }
 
@@ -181,9 +205,8 @@ impl KeyPair for min_pk::SecretKey {
         PublicKey::BLS(BLSPublicKey(self.sk_to_pk()))
     }
     fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        let dst = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
         let aug = self.sk_to_pk().to_bytes();
-        Ok(Signature::BLS(BLSSignature(self.sign(msg, dst, &aug))))
+        Ok(Signature::BLS(BLSSignature(self.sign(msg, BLS_DST, &aug))))
     }
 }
 
@@ -313,5 +336,77 @@ impl Keychain {
             Some(k) => Ok(k.public_key()),
             None => Err(Error::InvalidHandle),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature};
+    use crate::macros::unwrap_as;
+    use signature::{DigestVerifier, Verifier};
+
+    #[test]
+    fn keychain_secp256k1() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::Secp256k1, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let data = b"text";
+        let sig = unwrap_as!(
+            keychain.try_sign(handle, data).unwrap(),
+            Signature::Secp256k1
+        );
+
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Secp256k1);
+
+        let mut digest = Blake2b256::new();
+        digest.update(data);
+        pub_key.verify_digest(digest, &sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_nist_p256() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::NistP256, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let data = b"text";
+        let sig = unwrap_as!(
+            keychain.try_sign(handle, data).unwrap(),
+            Signature::NistP256
+        );
+
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::NistP256);
+
+        let mut digest = Blake2b256::new();
+        digest.update(data);
+        pub_key.verify_digest(digest, &sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_ed25519() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::Ed25519, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let data = b"text";
+        let sig = unwrap_as!(keychain.try_sign(handle, data).unwrap(), Signature::Ed25519);
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Ed25519);
+
+        let digest = Blake2b256::digest(data);
+        pub_key.verify(&digest, &sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_bls() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::BLS, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let data = b"text";
+        let sig = unwrap_as!(keychain.try_sign(handle, data).unwrap(), Signature::BLS);
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::BLS);
+
+        pub_key.verify(data, &sig).unwrap();
     }
 }

@@ -1,9 +1,9 @@
+use crypto::{KeyPair, KeyType, Keychain, PrivateKey, PublicKey, Signature};
 use rand_core::CryptoRngCore;
 use serde::{de::DeserializeOwned, Serialize};
-use signer::{KeyPair, KeyType, Keychain, PrivateKey, PublicKey, Signature};
 
+pub mod crypto;
 pub mod rpc;
-pub mod signer;
 
 trait TryIntoCBOR {
     type Error;
@@ -51,7 +51,7 @@ pub trait Sealant: std::fmt::Debug + Sized {
 #[derive(Debug)]
 pub enum Error<S: Sealant> {
     Sealant(S::Error),
-    Signer(signer::Error),
+    Signer(crypto::Error),
     Serialize(ciborium::ser::Error<std::io::Error>),
     Deserialize(ciborium::de::Error<std::io::Error>),
 }
@@ -90,8 +90,8 @@ impl<S: Sealant> From<ciborium::ser::Error<std::io::Error>> for Error<S> {
     }
 }
 
-impl<S: Sealant> From<signer::Error> for Error<S> {
-    fn from(value: signer::Error) -> Self {
+impl<S: Sealant> From<crypto::Error> for Error<S> {
+    fn from(value: crypto::Error) -> Self {
         Error::Signer(value)
     }
 }
@@ -170,5 +170,127 @@ impl<S: Sealant> SealedSigner<S> {
 
     pub fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<S>> {
         Ok(self.unseal(key_data)?.public_key())
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod macros {
+    macro_rules! unwrap_as {
+        ($target: expr, $pat: path) => {
+            match $target {
+                $pat(a) => a,
+                _ => {
+                    panic!(
+                        "{} doesn't match the pattern {}",
+                        stringify!($target),
+                        stringify!($pat)
+                    );
+                }
+            }
+        };
+    }
+    pub(crate) use unwrap_as;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{KeyType, Sealant, SealedSigner};
+    use crate::crypto::{Blake2b256, PublicKey, Signature};
+    use crate::macros::unwrap_as;
+    use blake2::Digest;
+    use signature::{DigestVerifier, Verifier};
+
+    #[derive(Debug)]
+    struct Passthrough;
+    struct DummyCredentials;
+    #[derive(Debug)]
+    struct DummyErr;
+
+    impl std::fmt::Display for DummyErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("dummy")
+        }
+    }
+
+    impl std::error::Error for DummyErr {}
+
+    impl Sealant for Passthrough {
+        type Credentials = DummyCredentials;
+        type Error = DummyErr;
+
+        fn try_new(_cred: Self::Credentials) -> Result<Self, Self::Error> {
+            Ok(Self)
+        }
+
+        fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+            Ok(Vec::from(src))
+        }
+
+        fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+            Ok(Vec::from(src))
+        }
+    }
+
+    #[test]
+    fn signer_secp256k1() {
+        let signer: SealedSigner<Passthrough> = SealedSigner::try_new(DummyCredentials).unwrap();
+        let (pk_bytes, pub_key) = signer
+            .generate(KeyType::Secp256k1, &mut rand_core::OsRng)
+            .unwrap();
+
+        let data = b"text";
+        let sig = unwrap_as!(
+            signer.try_sign_with(&pk_bytes, data).unwrap(),
+            Signature::Secp256k1
+        );
+
+        let mut digest = Blake2b256::new();
+        digest.update(data);
+
+        unwrap_as!(pub_key, PublicKey::Secp256k1)
+            .verify_digest(digest, &sig)
+            .unwrap();
+    }
+
+    #[test]
+    fn signer_nist_p256() {
+        let signer: SealedSigner<Passthrough> = SealedSigner::try_new(DummyCredentials).unwrap();
+        let (pk_bytes, pub_key) = signer
+            .generate(KeyType::NistP256, &mut rand_core::OsRng)
+            .unwrap();
+
+        let data = b"text";
+        let sig = unwrap_as!(
+            signer.try_sign_with(&pk_bytes, data).unwrap(),
+            Signature::NistP256
+        );
+
+        let mut digest = Blake2b256::new();
+        digest.update(data);
+
+        unwrap_as!(pub_key, PublicKey::NistP256)
+            .verify_digest(digest, &sig)
+            .unwrap();
+    }
+
+    #[test]
+
+    fn signer_ed25519() {
+        let signer: SealedSigner<Passthrough> = SealedSigner::try_new(DummyCredentials).unwrap();
+        let (pk_bytes, pub_key) = signer
+            .generate(KeyType::Ed25519, &mut rand_core::OsRng)
+            .unwrap();
+
+        let data = b"text";
+        let sig = unwrap_as!(
+            signer.try_sign_with(&pk_bytes, data).unwrap(),
+            Signature::Ed25519
+        );
+
+        let digest = Blake2b256::digest(data);
+
+        unwrap_as!(pub_key, PublicKey::Ed25519)
+            .verify(&digest, &sig)
+            .unwrap();
     }
 }
