@@ -3,6 +3,7 @@ use std::net::{self, UdpSocket};
 use std::os::unix::{self, net::UnixDatagram};
 use std::time::Duration;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub mod vsock;
 
 pub trait DatagramSocket {
