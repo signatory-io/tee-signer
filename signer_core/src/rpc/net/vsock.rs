@@ -84,7 +84,6 @@ impl VSockDatagram {
         }
     }
 
-    #[cfg(target_os = "linux")]
     pub fn local_cid(&self) -> Result<u32, io::Error> {
         const DEV: &std::ffi::CStr = c"/dev/vsock";
         const IOCTL_VM_SOCKETS_GET_LOCAL_CID: libc::c_ulong = 0x7b9;
@@ -98,21 +97,6 @@ impl VSockDatagram {
                 &mut cid as *mut u32,
             ))
         }
-        .and(Ok(cid))
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn local_cid(&self) -> Result<u32, io::Error> {
-        const IOCTL_VM_SOCKETS_GET_LOCAL_CID: libc::c_ulong = 0x400473d1;
-
-        let mut cid = 0_u32;
-        libc_ret(unsafe {
-            libc::ioctl(
-                self.0.as_raw_fd(),
-                IOCTL_VM_SOCKETS_GET_LOCAL_CID,
-                &mut cid as *mut u32,
-            )
-        })
         .and(Ok(cid))
     }
 
