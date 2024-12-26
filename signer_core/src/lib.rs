@@ -198,13 +198,15 @@ mod tests {
     use crate::crypto::{Blake2b256, PublicKey, Signature};
     use crate::macros::unwrap_as;
     use blake2::Digest;
+    use serde::{Deserialize, Serialize};
     use signature::{DigestVerifier, Verifier};
 
     #[derive(Debug)]
-    struct Passthrough;
-    struct DummyCredentials;
+    pub(crate) struct Passthrough;
+    #[derive(Serialize, Deserialize, Debug)]
+    pub(crate) struct DummyCredentials;
     #[derive(Debug)]
-    struct DummyErr;
+    pub(crate) struct DummyErr;
 
     impl std::fmt::Display for DummyErr {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

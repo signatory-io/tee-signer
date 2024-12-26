@@ -1,11 +1,24 @@
 use blake2::{digest, Blake2b, Digest};
-use blst::min_pk;
-use elliptic_curve::FieldBytes;
 use k256::Secp256k1;
 use p256::NistP256;
+use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
+pub use signature::Error as SignatureError;
 use signature::{DigestSigner, Signer, Verifier};
 use std::fmt::Debug;
+
+pub mod bls;
+pub mod ecdsa;
+
+pub trait KeyPair: Debug {
+    fn public_key(&self) -> PublicKey;
+    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error>;
+}
+
+pub trait Random: Sized {
+    type Error;
+    fn random<R: CryptoRngCore>(rng: &mut R) -> Result<Self, Self::Error>;
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum KeyType {
@@ -17,179 +30,13 @@ pub enum KeyType {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Signature {
-    Secp256k1(ecdsa::Signature<Secp256k1>),
-    NistP256(ecdsa::Signature<NistP256>),
+    Secp256k1(::ecdsa::Signature<Secp256k1>),
+    NistP256(::ecdsa::Signature<NistP256>),
     Ed25519(ed25519::Signature),
-    BLS(BLSSignature),
-}
-
-#[derive(Debug)]
-pub struct BLSSignature(min_pk::Signature);
-
-impl core::ops::Deref for BLSSignature {
-    type Target = min_pk::Signature;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-// use compressed form for serialization
-impl Serialize for BLSSignature {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serdect::array::serialize_hex_upper_or_bin(&self.0.compress(), serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for BLSSignature {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let mut bytes: [u8; 48] = [0; 48];
-        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
-        match min_pk::Signature::uncompress(&bytes) {
-            Ok(val) => Ok(BLSSignature(val)),
-            Err(err) => Err(serde::de::Error::custom(Error::from(err))),
-        }
-    }
-}
-
-pub trait KeyPair: Debug {
-    fn public_key(&self) -> PublicKey;
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error>;
-}
-
-#[derive(Debug)]
-pub struct ECDSASigningKey<C>(C);
-
-impl Serialize for ECDSASigningKey<ecdsa::SigningKey<Secp256k1>> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serdect::array::serialize_hex_upper_or_bin(&self.0.to_bytes(), serializer)
-    }
-}
-
-impl Serialize for ECDSASigningKey<ecdsa::SigningKey<NistP256>> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serdect::array::serialize_hex_upper_or_bin(&self.0.to_bytes(), serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ECDSASigningKey<ecdsa::SigningKey<Secp256k1>> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let mut bytes = FieldBytes::<Secp256k1>::default();
-        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
-        match ecdsa::SigningKey::from_bytes(&bytes) {
-            Ok(val) => Ok(Self(val)),
-            Err(err) => Err(serde::de::Error::custom(err)),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for ECDSASigningKey<ecdsa::SigningKey<NistP256>> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let mut bytes = FieldBytes::<NistP256>::default();
-        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
-        match ecdsa::SigningKey::from_bytes(&bytes) {
-            Ok(val) => Ok(Self(val)),
-            Err(err) => Err(serde::de::Error::custom(err)),
-        }
-    }
-}
-
-impl<C> core::ops::Deref for ECDSASigningKey<C> {
-    type Target = C;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    BLS(bls::Signature),
 }
 
 pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
-
-const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
-
-#[derive(Debug)]
-pub struct BLSPublicKey(min_pk::PublicKey);
-
-impl Verifier<BLSSignature> for BLSPublicKey {
-    fn verify(&self, msg: &[u8], signature: &BLSSignature) -> Result<(), signature::Error> {
-        let aug = self.to_bytes();
-        match signature.0.verify(true, msg, BLS_DST, &aug, self, true) {
-            blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
-            err => {
-                let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::BLS(err));
-                Err(b.into())
-            }
-        }
-    }
-}
-
-impl core::ops::Deref for BLSPublicKey {
-    type Target = min_pk::PublicKey;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-// use compressed form for serialization
-impl Serialize for BLSPublicKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serdect::array::serialize_hex_upper_or_bin(&self.0.compress(), serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for BLSPublicKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let mut bytes: [u8; 48] = [0; 48];
-        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
-        match min_pk::PublicKey::uncompress(&bytes) {
-            Ok(val) => Ok(BLSPublicKey(val)),
-            Err(err) => Err(serde::de::Error::custom(Error::from(err))),
-        }
-    }
-}
-
-impl KeyPair for ECDSASigningKey<ecdsa::SigningKey<Secp256k1>> {
-    fn public_key(&self) -> PublicKey {
-        PublicKey::Secp256k1(self.verifying_key().clone())
-    }
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        let mut d = Blake2b256::new();
-        d.update(msg);
-        Ok(Signature::Secp256k1(self.0.try_sign_digest(d)?))
-    }
-}
-
-impl KeyPair for ECDSASigningKey<ecdsa::SigningKey<NistP256>> {
-    fn public_key(&self) -> PublicKey {
-        PublicKey::NistP256(self.verifying_key().clone())
-    }
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        let mut d = Blake2b256::new();
-        d.update(msg);
-        Ok(Signature::NistP256(self.0.try_sign_digest(d)?))
-    }
-}
 
 impl KeyPair for ed25519_dalek::SigningKey {
     fn public_key(&self) -> PublicKey {
@@ -202,39 +49,21 @@ impl KeyPair for ed25519_dalek::SigningKey {
     }
 }
 
-impl KeyPair for min_pk::SecretKey {
-    fn public_key(&self) -> PublicKey {
-        PublicKey::BLS(BLSPublicKey(self.sk_to_pk()))
-    }
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
-        let aug = self.sk_to_pk().to_bytes();
-        Ok(Signature::BLS(BLSSignature(self.sign(msg, BLS_DST, &aug))))
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PrivateKey {
-    Secp256k1(ECDSASigningKey<ecdsa::SigningKey<Secp256k1>>),
-    NistP256(ECDSASigningKey<ecdsa::SigningKey<NistP256>>),
+    Secp256k1(ecdsa::SigningKey<::ecdsa::SigningKey<Secp256k1>>),
+    NistP256(ecdsa::SigningKey<::ecdsa::SigningKey<NistP256>>),
     Ed25519(ed25519_dalek::SigningKey),
-    BLS(min_pk::SecretKey),
+    BLS(bls::SigningKey),
 }
 
 impl PrivateKey {
     pub fn generate<R: rand_core::CryptoRngCore>(t: KeyType, r: &mut R) -> Result<Self, Error> {
         match t {
-            KeyType::Secp256k1 => Ok(PrivateKey::Secp256k1(ECDSASigningKey(
-                ecdsa::SigningKey::random(r),
-            ))),
-            KeyType::NistP256 => Ok(PrivateKey::NistP256(ECDSASigningKey(
-                ecdsa::SigningKey::random(r),
-            ))),
+            KeyType::Secp256k1 => Ok(PrivateKey::Secp256k1(ecdsa::SigningKey::random(r).unwrap())),
+            KeyType::NistP256 => Ok(PrivateKey::NistP256(ecdsa::SigningKey::random(r).unwrap())),
             KeyType::Ed25519 => Ok(PrivateKey::Ed25519(ed25519_dalek::SigningKey::generate(r))),
-            KeyType::BLS => {
-                let mut ikm: [u8; 32] = [0; 32];
-                r.fill_bytes(&mut ikm);
-                Ok(PrivateKey::BLS(min_pk::SecretKey::key_gen(&ikm, &[])?))
-            }
+            KeyType::BLS => Ok(PrivateKey::BLS(bls::SigningKey::random(r)?)),
         }
     }
 }
@@ -261,17 +90,17 @@ impl KeyPair for PrivateKey {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PublicKey {
-    Secp256k1(ecdsa::VerifyingKey<Secp256k1>),
-    NistP256(ecdsa::VerifyingKey<NistP256>),
+    Secp256k1(::ecdsa::VerifyingKey<Secp256k1>),
+    NistP256(::ecdsa::VerifyingKey<NistP256>),
     Ed25519(ed25519_dalek::VerifyingKey),
-    BLS(BLSPublicKey),
+    BLS(bls::PublicKey),
 }
 
 #[derive(Debug)]
 pub enum Error {
     InvalidHandle,
-    Signature(signature::Error),
-    BLS(blst::BLST_ERROR),
+    Signature(SignatureError),
+    BLS(bls::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -279,7 +108,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::InvalidHandle => f.write_str("invalid handle"),
             Error::Signature(_) => f.write_str("signature error"),
-            Error::BLS(v) => write!(f, "BLST error: {}", *v as u8),
+            Error::BLS(_) => f.write_str("BLST error"),
         }
     }
 }
@@ -288,26 +117,27 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Signature(e) => e.source(),
+            Error::BLS(e) => Some(e),
             _ => None,
         }
     }
 }
 
-impl From<signature::Error> for Error {
-    fn from(value: signature::Error) -> Self {
+impl From<SignatureError> for Error {
+    fn from(value: SignatureError) -> Self {
         Error::Signature(value)
     }
 }
 
-impl From<blst::BLST_ERROR> for Error {
-    fn from(value: blst::BLST_ERROR) -> Self {
+impl From<bls::Error> for Error {
+    fn from(value: bls::Error) -> Self {
         Error::BLS(value)
     }
 }
 
 #[derive(Debug)]
 pub struct Keychain {
-    keys: Vec<Box<dyn KeyPair>>,
+    keys: Vec<Box<dyn KeyPair + Send>>,
 }
 
 impl Keychain {
@@ -316,7 +146,7 @@ impl Keychain {
     }
 
     pub fn import(&mut self, src: PrivateKey) -> usize {
-        let signer: Box<dyn KeyPair> = match src {
+        let signer: Box<dyn KeyPair + Send> = match src {
             PrivateKey::Secp256k1(val) => Box::new(val),
             PrivateKey::NistP256(val) => Box::new(val),
             PrivateKey::Ed25519(val) => Box::new(val),
@@ -344,8 +174,63 @@ impl Keychain {
 #[cfg(test)]
 mod tests {
     use super::{Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature};
-    use crate::macros::unwrap_as;
+    use crate::{crypto::KeyPair, macros::unwrap_as, TryFromCBOR, TryIntoCBOR};
     use signature::{DigestVerifier, Verifier};
+
+    macro_rules! impl_pk_serde_test {
+        ($name:ident, $ty:tt) => {
+            #[test]
+            fn $name() {
+                let pk = PrivateKey::generate(KeyType::$ty, &mut rand_core::OsRng).unwrap();
+                let ser_pk = pk.try_into_cbor().unwrap();
+                let de_pk = PrivateKey::try_from_cbor(&ser_pk).unwrap();
+                assert!(matches!(de_pk, PrivateKey::$ty(_)));
+            }
+        };
+    }
+
+    impl_pk_serde_test!(serde_pk_nist_p256, NistP256);
+    impl_pk_serde_test!(serde_pk_secp256k1, Secp256k1);
+    impl_pk_serde_test!(serde_pk_ed25519, Ed25519);
+    impl_pk_serde_test!(serde_pk_bls, BLS);
+
+    macro_rules! impl_pubkey_serde_test {
+        ($name:ident, $ty:tt) => {
+            #[test]
+            fn $name() {
+                let pubkey = PrivateKey::generate(KeyType::$ty, &mut rand_core::OsRng)
+                    .unwrap()
+                    .public_key();
+                let ser_pubkey = pubkey.try_into_cbor().unwrap();
+                let de_pubkey = PublicKey::try_from_cbor(&ser_pubkey).unwrap();
+                assert!(matches!(de_pubkey, PublicKey::$ty(_)));
+            }
+        };
+    }
+
+    impl_pubkey_serde_test!(serde_pubkey_nist_p256, NistP256);
+    impl_pubkey_serde_test!(serde_pubkey_secp256k1, Secp256k1);
+    impl_pubkey_serde_test!(serde_pubkey_ed25519, Ed25519);
+    impl_pubkey_serde_test!(serde_pubkey_bls, BLS);
+
+    macro_rules! impl_sig_serde_test {
+        ($name:ident, $ty:tt) => {
+            #[test]
+            fn $name() {
+                let pk = PrivateKey::generate(KeyType::$ty, &mut rand_core::OsRng).unwrap();
+                let data = b"text";
+                let sig = pk.try_sign(data).unwrap();
+                let ser_sig = sig.try_into_cbor().unwrap();
+                let de_sig = Signature::try_from_cbor(&ser_sig).unwrap();
+                assert!(matches!(de_sig, Signature::$ty(_)));
+            }
+        };
+    }
+
+    impl_sig_serde_test!(serde_sig_nist_p256, NistP256);
+    impl_sig_serde_test!(serde_sig_secp256k1, Secp256k1);
+    impl_sig_serde_test!(serde_sig_ed25519, Ed25519);
+    impl_sig_serde_test!(serde_sig_bls, BLS);
 
     #[test]
     fn keychain_secp256k1() {

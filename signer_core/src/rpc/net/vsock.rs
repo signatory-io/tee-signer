@@ -33,6 +33,12 @@ impl std::fmt::Display for SocketAddr {
     }
 }
 
+impl std::fmt::Debug for SocketAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "vsock:{}:{}", self.cid(), self.port())
+    }
+}
+
 pub struct VSockDatagram(OwnedFd);
 
 fn libc_ret<T: num::Signed>(v: T) -> Result<T, io::Error> {

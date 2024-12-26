@@ -6,7 +6,7 @@ use std::time::Duration;
 pub mod vsock;
 
 pub trait DatagramSocket {
-    type Addr;
+    type Addr: std::fmt::Debug;
     type Error;
 
     fn recv(&self, buf: &mut [u8]) -> Result<usize, Self::Error>;
