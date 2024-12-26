@@ -51,10 +51,10 @@ fn libc_ret<T: num::Signed>(v: T) -> Result<T, io::Error> {
 
 impl VSockDatagram {
     unsafe fn socket() -> Result<OwnedFd, io::Error> {
-        let fd = libc_ret(libc::socket(libc::AF_VSOCK, libc::SOCK_DGRAM, 0))?;
-        let flags = libc_ret(libc::fcntl(fd, libc::F_GETFD, 0))?;
-        libc_ret(libc::fcntl(fd, libc::F_SETFD, flags))?;
-        Ok(OwnedFd::from_raw_fd(fd))
+        let fd = OwnedFd::from_raw_fd(libc_ret(libc::socket(libc::AF_VSOCK, libc::SOCK_DGRAM, 0))?);
+        let flags = libc_ret(libc::fcntl(fd.as_raw_fd(), libc::F_GETFD, 0))?;
+        libc_ret(libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, flags))?;
+        Ok(fd)
     }
 
     pub fn bind(addr: &SocketAddr) -> Result<Self, io::Error> {
