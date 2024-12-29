@@ -1,5 +1,6 @@
 use crate::crypto::{KeyType, PublicKey, Signature};
-use crate::rpc::{net::DatagramSocket, Error as RPCError, Request, Result as RPCResult};
+use crate::rpc::net::{AsyncDatagramSocket, DatagramSocket};
+use crate::rpc::{Error as RPCError, Request, Result as RPCResult};
 use crate::{TryFromCBOR, TryIntoCBOR};
 use serde::Serialize;
 use std::marker::PhantomData;
@@ -49,12 +50,13 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub struct Client<T, C> {
+struct Inner<T, C> {
     socket: T,
     _phantom: PhantomData<C>,
 }
 
 const BUF_SZ: usize = 64 * 1024;
+pub struct Client<T, C>(Inner<T, C>);
 
 impl<T, C> Client<T, C>
 where
@@ -63,10 +65,10 @@ where
     C: Serialize,
 {
     pub fn new(sock: T) -> Self {
-        Client {
+        Client(Inner {
             socket: sock,
             _phantom: PhantomData,
-        }
+        })
     }
 
     fn round_trip<R>(&self, q: Request<C>) -> Result<R, Error>
@@ -78,10 +80,10 @@ where
             From<<Request<C> as TryIntoCBOR>::Error> + From<<RPCResult<R> as TryFromCBOR>::Error>,
     {
         let buf = q.try_into_cbor()?;
-        self.socket.send(&buf)?;
+        self.0.socket.send(&buf)?;
 
         let mut r_buf: [u8; BUF_SZ] = [0; BUF_SZ];
-        let sz = self.socket.recv(&mut r_buf)?;
+        let sz = self.0.socket.recv(&mut r_buf)?;
         let res = RPCResult::<R>::try_from_cbor(&r_buf[0..sz])?;
         Ok(res?)
     }
@@ -92,7 +94,7 @@ where
 
     pub fn terminate(&self) -> Result<(), Error> {
         let buf = Request::<C>::Terminate.try_into_cbor()?;
-        self.socket.send(&buf)?;
+        self.0.socket.send(&buf)?;
         Ok(())
     }
 
@@ -128,5 +130,92 @@ where
 
     pub fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error> {
         self.round_trip::<PublicKey>(Request::PublicKeyFrom(key_data.into()))
+    }
+}
+
+pub struct AsyncClient<T, C>(Inner<T, C>);
+
+impl<T, C> AsyncClient<T, C>
+where
+    T: AsyncDatagramSocket,
+    Error: From<T::Error>,
+    C: Serialize,
+{
+    pub fn new(sock: T) -> Self {
+        AsyncClient(Inner {
+            socket: sock,
+            _phantom: PhantomData,
+        })
+    }
+
+    async fn round_trip<R>(&self, q: Request<C>) -> Result<R, Error>
+    where
+        R: TryFromCBOR,
+        Request<C>: TryIntoCBOR,
+        RPCResult<R>: TryFromCBOR,
+        Error:
+            From<<Request<C> as TryIntoCBOR>::Error> + From<<RPCResult<R> as TryFromCBOR>::Error>,
+    {
+        let buf = q.try_into_cbor()?;
+        self.0.socket.send(&buf).await?;
+
+        let mut r_buf: [u8; BUF_SZ] = [0; BUF_SZ];
+        let sz = self.0.socket.recv(&mut r_buf).await?;
+        let res = RPCResult::<R>::try_from_cbor(&r_buf[0..sz])?;
+        Ok(res?)
+    }
+
+    pub async fn initialize(&self, cred: C) -> Result<(), Error> {
+        self.round_trip::<()>(Request::Initialize(cred)).await
+    }
+
+    pub async fn terminate(&self) -> Result<(), Error> {
+        let buf = Request::<C>::Terminate.try_into_cbor()?;
+        self.0.socket.send(&buf).await?;
+        Ok(())
+    }
+
+    pub async fn import(&self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {
+        self.round_trip::<(PublicKey, usize)>(Request::Import(key_data.into()))
+            .await
+    }
+
+    pub async fn generate(&self, t: KeyType) -> Result<(Vec<u8>, PublicKey), Error> {
+        self.round_trip::<(Vec<u8>, PublicKey)>(Request::Generate(t))
+            .await
+    }
+
+    pub async fn generate_and_import(
+        &self,
+        t: KeyType,
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error> {
+        self.round_trip::<(Vec<u8>, PublicKey, usize)>(Request::GenerateAndImport(t))
+            .await
+    }
+
+    pub async fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::Sign {
+            handle: handle,
+            msg: msg.into(),
+        })
+        .await
+    }
+
+    pub async fn try_sign_with(&self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::SignWith {
+            key_data: key_data.into(),
+            msg: msg.into(),
+        })
+        .await
+    }
+
+    pub async fn public_key(&self, handle: usize) -> Result<PublicKey, Error> {
+        self.round_trip::<PublicKey>(Request::PublicKey(handle))
+            .await
+    }
+
+    pub async fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error> {
+        self.round_trip::<PublicKey>(Request::PublicKeyFrom(key_data.into()))
+            .await
     }
 }

@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+vsock = { path = "../vsock" }
+tokio = { version = "1.42", features = ["rt-multi-thread"] }
 ecdsa = { version = "0.16", features = ["serde"] }
 ed25519 = { version = "2.2", features = ["serde", "zeroize"] }
 ed25519-dalek = { version = "2.1", features = ["serde", "rand_core"] }

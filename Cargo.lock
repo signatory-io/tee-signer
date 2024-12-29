@@ -1717,6 +1717,8 @@ dependencies = [
  "serdect",
  "signature",
  "subtle",
+ "tokio",
+ "vsock",
 ]
 
 [[package]]
