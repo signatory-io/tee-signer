@@ -293,7 +293,7 @@ mod tests {
     use super::{KeyType, Sealant, SealedSigner};
     use crate::crypto::{Blake2b256, PublicKey, Signature};
     use crate::macros::unwrap_as;
-    use crate::SyncSealant;
+    use crate::{AsyncSealant, SyncSealant};
     use blake2::Digest;
     use serde::{Deserialize, Serialize};
     use signature::{DigestVerifier, Verifier};
@@ -328,6 +328,20 @@ mod tests {
         }
 
         fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+            Ok(Vec::from(src))
+        }
+    }
+
+    impl AsyncSealant for Passthrough {
+        async fn try_new(_cred: Self::Credentials) -> Result<Self, Self::Error> {
+            Ok(Self)
+        }
+
+        async fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+            Ok(Vec::from(src))
+        }
+
+        async fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
             Ok(Vec::from(src))
         }
     }

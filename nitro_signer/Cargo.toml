@@ -8,5 +8,4 @@ signer_core = { path = "../signer_core" }
 aws-config = { version = "1.1", features = ["behavior-version-latest"] }
 aws-sdk-kms = "1.52"
 aws-nitro-enclaves-nsm-api = "0.4"
-tokio = { version = "1.42", features = ["rt-multi-thread"] }
 serde = { version = "1.0", features = ["derive"] }
