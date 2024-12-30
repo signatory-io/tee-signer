@@ -69,7 +69,7 @@ async fn async_echo_poll() {
                 .await
                 .unwrap();
             client.write(data).await.unwrap();
-            let mut buf: [u8; 1024] = [0; 1024];
+            let mut buf: [u8; 8] = [0; 8];
             let sz = client.read_exact(&mut buf).await.unwrap();
             assert_eq!(&buf[0..sz], data);
         }
