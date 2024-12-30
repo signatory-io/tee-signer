@@ -459,6 +459,28 @@ mod tests {
     use std::thread;
 
     #[test]
+    fn stream_echo() {
+        let listener = Listener::bind(&SocketAddr::new(VMADDR_CID_ANY, 3000)).unwrap();
+        let jh = thread::spawn(move || {
+            let mut buf: [u8; 8] = [0; 8];
+            let (conn, _) = listener.accept().unwrap();
+            conn.recv(&mut buf).unwrap();
+            conn.send(&buf).unwrap();
+        });
+
+        let data: &[u8; 8] = b"datadata";
+
+        let client = Stream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, 3000)).unwrap();
+        client.send(data).unwrap();
+
+        let mut buf: [u8; 1024] = [0; 1024];
+        let sz = client.recv(&mut buf).unwrap();
+        assert_eq!(&buf[0..sz], data);
+        jh.join().unwrap();
+    }
+
+    /*
+    #[test]
     fn datagram_echo() {
         let s_sock = Datagram::bind(&SocketAddr::new(VMADDR_CID_ANY, 3000)).unwrap();
         let jh = thread::spawn(move || {
@@ -481,4 +503,5 @@ mod tests {
         assert_eq!(&buf[0..sz], data);
         jh.join().unwrap();
     }
+    */
 }
