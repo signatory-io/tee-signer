@@ -20,7 +20,7 @@ pub struct SocketAddr(libc::sockaddr_vm);
 impl SocketAddr {
     pub fn new(cid: u32, port: u32) -> Self {
         let mut sa: libc::sockaddr_vm = unsafe { zeroed() };
-        sa.svm_family = AF_VSOCK.try_into().unwrap();
+        sa.svm_family = unsafe { AF_VSOCK.try_into().unwrap_unchecked() };
         sa.svm_port = port;
         sa.svm_cid = cid;
         Self(sa)

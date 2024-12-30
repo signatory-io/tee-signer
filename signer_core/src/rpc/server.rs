@@ -99,7 +99,7 @@ where
             sock.read_exact(&mut buf)?;
 
             let ok = self.handle_message(&mut buf)?;
-            let len = (buf.len() as u32).to_be_bytes();
+            let len = u32::try_from(buf.len()).unwrap().to_be_bytes();
             w_buf.clear();
             w_buf.extend_from_slice(&len);
             w_buf.extend_from_slice(&buf);
@@ -222,7 +222,7 @@ where
             sock.read_exact(&mut buf).await?;
 
             let ok = self.handle_message(&mut buf).await?;
-            let len = (buf.len() as u32).to_be_bytes();
+            let len = u32::try_from(buf.len()).unwrap().to_be_bytes();
             w_buf.clear();
             w_buf.extend_from_slice(&len);
             w_buf.extend_from_slice(&buf);

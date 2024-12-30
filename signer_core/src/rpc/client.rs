@@ -90,7 +90,7 @@ where
     {
         self.0.buf.clear();
         req.try_into_writer(&mut self.0.buf)?;
-        let len = (self.0.buf.len() as u32).to_be_bytes();
+        let len = u32::try_from(self.0.buf.len()).unwrap().to_be_bytes();
 
         self.0.w_buf.clear();
         self.0.w_buf.extend_from_slice(&len);
@@ -175,7 +175,7 @@ where
     {
         self.0.buf.clear();
         req.try_into_writer(&mut self.0.buf)?;
-        let len = (self.0.buf.len() as u32).to_be_bytes();
+        let len = u32::try_from(self.0.buf.len()).unwrap().to_be_bytes();
 
         self.0.w_buf.clear();
         self.0.w_buf.extend_from_slice(&len);
