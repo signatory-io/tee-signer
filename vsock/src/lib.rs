@@ -1,7 +1,5 @@
 use libc::AF_VSOCK;
-pub use libc::{
-    VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_HYPERVISOR, VMADDR_CID_RESERVED, VMADDR_PORT_ANY,
-};
+pub use libc::{VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_HYPERVISOR, VMADDR_PORT_ANY};
 use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::mem::zeroed;
 use std::net::Shutdown;
@@ -15,12 +13,14 @@ use utils::{
     recvfrom, send, sendto, setsockopt, shutdown, socket,
 };
 
+pub const VMADDR_CID_LOCAL: libc::c_uint = 1;
+
 pub struct SocketAddr(libc::sockaddr_vm);
 
 impl SocketAddr {
     pub fn new(cid: u32, port: u32) -> Self {
         let mut sa: libc::sockaddr_vm = unsafe { zeroed() };
-        sa.svm_family = libc::AF_VSOCK as u8;
+        sa.svm_family = AF_VSOCK.try_into().unwrap();
         sa.svm_port = port;
         sa.svm_cid = cid;
         Self(sa)
@@ -88,7 +88,7 @@ impl Inner {
 
     fn local_addr(&self) -> Result<SocketAddr> {
         let addr: libc::sockaddr_vm = getsockname(self.0.as_raw_fd())?;
-        if addr.svm_family != AF_VSOCK as u8 {
+        if addr.svm_family as libc::c_int != AF_VSOCK {
             Err(Error::new(
                 ErrorKind::InvalidInput,
                 "file descriptor did not correspond to a AF_VSOCK",
@@ -100,7 +100,7 @@ impl Inner {
 
     fn peer_addr(&self) -> Result<SocketAddr> {
         let addr: libc::sockaddr_vm = getpeername(self.0.as_raw_fd())?;
-        if addr.svm_family != AF_VSOCK as u8 {
+        if addr.svm_family as libc::c_int != AF_VSOCK {
             Err(Error::new(
                 ErrorKind::InvalidInput,
                 "file descriptor did not correspond to a AF_VSOCK",
@@ -228,7 +228,7 @@ impl Datagram {
 
     pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let (len, addr) = recvfrom::<libc::sockaddr_vm>(self.as_raw_fd(), buf, 0)?;
-        if addr.svm_family != AF_VSOCK as u8 {
+        if addr.svm_family as libc::c_int != AF_VSOCK {
             Err(Error::new(
                 ErrorKind::InvalidInput,
                 "file descriptor did not correspond to a AF_VSOCK",
@@ -450,5 +450,35 @@ impl<'a> Iterator for Incoming<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.0.accept().map(|pair| pair.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    #[test]
+    fn datagram_echo() {
+        let s_sock = Datagram::bind(&SocketAddr::new(VMADDR_CID_ANY, 3000)).unwrap();
+        let jh = thread::spawn(move || {
+            let mut buf: [u8; 1024] = [0; 1024];
+            let (sz, addr) = s_sock.recv_from(&mut buf).unwrap();
+            let buf = &buf[0..sz];
+            s_sock.send_to(buf, &addr).unwrap();
+        });
+
+        let data = b"data";
+
+        let c_sock = Datagram::unbound().unwrap();
+        c_sock
+            .connect(&SocketAddr::new(VMADDR_CID_LOCAL, 3000))
+            .unwrap();
+
+        c_sock.send(data).unwrap();
+        let mut buf: [u8; 1024] = [0; 1024];
+        let sz = c_sock.recv(&mut buf).unwrap();
+        assert_eq!(&buf[0..sz], data);
+        jh.join().unwrap();
     }
 }

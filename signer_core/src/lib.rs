@@ -389,7 +389,6 @@ mod tests {
     }
 
     #[test]
-
     fn signer_ed25519() {
         let signer: SealedSigner<Passthrough> = SealedSigner::try_new(DummyCredentials).unwrap();
         let (pk_bytes, pub_key) = signer
