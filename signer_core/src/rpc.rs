@@ -2,7 +2,6 @@ use crate::crypto::KeyType;
 use serde::{Deserialize, Serialize};
 
 pub mod client;
-pub mod net;
 pub mod server;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,16 +60,16 @@ mod tests {
         use crate::{macros::unwrap_as, Sealant};
         use blake2::Digest;
         use signature::{DigestVerifier, Verifier};
-        use std::os::unix::net::UnixDatagram;
+        use std::os::unix::net::UnixStream;
         use std::thread;
 
         #[test]
         fn rpc_sign_with_secp256k1() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let client: Client<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
                 Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
@@ -92,11 +91,11 @@ mod tests {
 
         #[test]
         fn rpc_sign_with_ed25519() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let client: Client<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
                 Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
@@ -117,11 +116,11 @@ mod tests {
 
         #[test]
         fn rpc_sign_with_bls() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let client: Client<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
                 Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
@@ -141,11 +140,11 @@ mod tests {
 
         #[test]
         fn rpc_generate_and_import_secp256k1() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let client: Client<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
                 Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
@@ -164,11 +163,11 @@ mod tests {
 
         #[test]
         fn rpc_generate_and_import_ed25519() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let client: Client<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
                 Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
@@ -186,11 +185,11 @@ mod tests {
 
         #[test]
         fn rpc_generate_and_import_bls() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let client: Client<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
                 Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
@@ -207,11 +206,11 @@ mod tests {
 
         #[test]
         fn rpc_uninitialized() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let client: Client<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
                 Client::new(client_sock);
 
             let err = client.generate(KeyType::Secp256k1).unwrap_err();
@@ -222,7 +221,6 @@ mod tests {
                     source: None
                 }
             );
-
             client.terminate().unwrap();
             jh.join().unwrap();
         }
@@ -230,20 +228,24 @@ mod tests {
 
     mod asynchronous {
         use crate::crypto::{Blake2b256, KeyType, PublicKey, Signature};
-        use crate::rpc::{client::AsyncClient, server::AsyncServer};
+        use crate::rpc::{
+            client::{AsyncClient, Error as ClientError},
+            server::AsyncServer,
+            Error,
+        };
         use crate::tests::{DummyCredentials, Passthrough};
         use crate::{macros::unwrap_as, Sealant};
         use blake2::Digest;
         use signature::DigestVerifier;
-        use tokio::net::UnixDatagram;
+        use tokio::net::UnixStream;
 
         #[tokio::test]
         async fn rpc_sign_with_secp256k1() {
-            let (srv_sock, client_sock) = UnixDatagram::pair().unwrap();
-            let server: AsyncServer<Passthrough, rand_core::OsRng> =
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: AsyncServer<Passthrough, rand_core::OsRng> =
                 AsyncServer::new(rand_core::OsRng);
 
-            let client: AsyncClient<UnixDatagram, <Passthrough as Sealant>::Credentials> =
+            let mut client: AsyncClient<UnixStream, <Passthrough as Sealant>::Credentials> =
                 AsyncClient::new(client_sock);
 
             futures::join!(
@@ -263,6 +265,34 @@ mod tests {
                     let mut digest = Blake2b256::new();
                     digest.update(data);
                     pub_key.verify_digest(digest, &sig).unwrap();
+
+                    client.terminate().await.unwrap();
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn rpc_uninitialized() {
+            let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+            let mut server: AsyncServer<Passthrough, rand_core::OsRng> =
+                AsyncServer::new(rand_core::OsRng);
+
+            let mut client: AsyncClient<UnixStream, <Passthrough as Sealant>::Credentials> =
+                AsyncClient::new(client_sock);
+
+            futures::join!(
+                async {
+                    server.serve_connection(srv_sock).await.unwrap();
+                },
+                async {
+                    let err = client.generate(KeyType::Secp256k1).await.unwrap_err();
+                    assert_eq!(
+                        unwrap_as!(err, ClientError::RPC),
+                        Error {
+                            message: "uninitialized".into(),
+                            source: None
+                        }
+                    );
 
                     client.terminate().await.unwrap();
                 }

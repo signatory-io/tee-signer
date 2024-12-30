@@ -9,6 +9,7 @@ pub mod rpc;
 trait TryIntoCBOR {
     type Error;
     fn try_into_cbor(&self) -> Result<Vec<u8>, Self::Error>;
+    fn try_into_writer<W: std::io::Write>(&self, w: W) -> Result<(), Self::Error>;
 }
 
 impl<T> TryIntoCBOR for T
@@ -21,6 +22,10 @@ where
         let mut buf: Vec<u8> = Vec::new();
         ciborium::into_writer(self, &mut buf)?;
         Ok(buf)
+    }
+
+    fn try_into_writer<W: std::io::Write>(&self, w: W) -> Result<(), Self::Error> {
+        ciborium::into_writer(self, w)
     }
 }
 
