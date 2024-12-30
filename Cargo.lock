@@ -2059,9 +2059,11 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 name = "vsock"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "libc",
  "num",
  "tokio",
+ "tokio-macros",
 ]
 
 [[package]]

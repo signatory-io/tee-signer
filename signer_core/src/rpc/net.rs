@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::io::{Error, ErrorKind};
 use std::os::unix::{self, net::UnixDatagram};
-use vsock::tokio::VSockDatagram;
+use vsock::asio::VSockDatagram;
 
 pub trait Socket {
     type Addr: std::fmt::Debug;

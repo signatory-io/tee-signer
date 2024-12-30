@@ -5,7 +5,7 @@ use std::mem::zeroed;
 use std::net::Shutdown;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 
-pub mod tokio;
+pub mod asio;
 mod utils;
 
 use utils::{
@@ -455,15 +455,17 @@ impl<'a> Iterator for Incoming<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::asio::{VSockListener, VSockStream};
+    use super::{Listener, SocketAddr, Stream, VMADDR_CID_ANY, VMADDR_CID_LOCAL};
     use std::thread;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
-    fn stream_echo() {
+    fn echo() {
         let listener = Listener::bind(&SocketAddr::new(VMADDR_CID_ANY, 3000)).unwrap();
         let jh = thread::spawn(move || {
-            let mut buf: [u8; 8] = [0; 8];
             let (conn, _) = listener.accept().unwrap();
+            let mut buf: [u8; 8] = [0; 8];
             conn.recv(&mut buf).unwrap();
             conn.send(&buf).unwrap();
         });
@@ -479,29 +481,52 @@ mod tests {
         jh.join().unwrap();
     }
 
-    /*
-    #[test]
-    fn datagram_echo() {
-        let s_sock = Datagram::bind(&SocketAddr::new(VMADDR_CID_ANY, 3000)).unwrap();
-        let jh = thread::spawn(move || {
-            let mut buf: [u8; 1024] = [0; 1024];
-            let (sz, addr) = s_sock.recv_from(&mut buf).unwrap();
-            let buf = &buf[0..sz];
-            s_sock.send_to(buf, &addr).unwrap();
-        });
-
-        let data = b"data";
-
-        let c_sock = Datagram::unbound().unwrap();
-        c_sock
-            .connect(&SocketAddr::new(VMADDR_CID_LOCAL, 3000))
-            .unwrap();
-
-        c_sock.send(data).unwrap();
-        let mut buf: [u8; 1024] = [0; 1024];
-        let sz = c_sock.recv(&mut buf).unwrap();
-        assert_eq!(&buf[0..sz], data);
-        jh.join().unwrap();
+    #[tokio::test]
+    async fn async_echo() {
+        let listener = VSockListener::bind(&SocketAddr::new(VMADDR_CID_ANY, 3001)).unwrap();
+        futures::join!(
+            async {
+                let (conn, _) = listener.accept().await.unwrap();
+                let mut buf: [u8; 8] = [0; 8];
+                conn.recv(&mut buf).await.unwrap();
+                conn.send(&buf).await.unwrap();
+            },
+            async {
+                let data: &[u8; 8] = b"datadata";
+                let client = VSockStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, 3001))
+                    .await
+                    .unwrap();
+                client.send(data).await.unwrap();
+                let mut buf: [u8; 1024] = [0; 1024];
+                let sz = client.recv(&mut buf).await.unwrap();
+                assert_eq!(&buf[0..sz], data);
+            }
+        );
     }
-    */
+
+    #[tokio::test]
+    async fn async_echo_poll() {
+        let listener = VSockListener::bind(&SocketAddr::new(VMADDR_CID_ANY, 3001)).unwrap();
+        futures::join!(
+            async {
+                let (mut conn, _) = std::future::poll_fn(|cx| listener.poll_accept(cx))
+                    .await
+                    .unwrap();
+
+                let mut buf: [u8; 8] = [0; 8];
+                conn.read_exact(&mut buf).await.unwrap();
+                conn.write(&buf).await.unwrap();
+            },
+            async {
+                let data: &[u8; 8] = b"datadata";
+                let mut client = VSockStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, 3001))
+                    .await
+                    .unwrap();
+                client.write(data).await.unwrap();
+                let mut buf: [u8; 1024] = [0; 1024];
+                let sz = client.read_exact(&mut buf).await.unwrap();
+                assert_eq!(&buf[0..sz], data);
+            }
+        );
+    }
 }
