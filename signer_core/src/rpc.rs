@@ -56,8 +56,8 @@ mod tests {
             server::Server,
             Error,
         };
-        use crate::tests::{DummyCredentials, Passthrough};
-        use crate::{macros::unwrap_as, Sealant};
+        use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
+        use crate::{macros::unwrap_as, SealedSigner};
         use blake2::Digest;
         use signature::{DigestVerifier, Verifier};
         use std::os::unix::net::UnixStream;
@@ -66,11 +66,14 @@ mod tests {
         #[test]
         fn rpc_sign_with_secp256k1() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                SealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
-                Client::new(client_sock);
+            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
             let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).unwrap();
@@ -92,11 +95,14 @@ mod tests {
         #[test]
         fn rpc_sign_with_ed25519() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                SealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
-                Client::new(client_sock);
+            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
             let (sealed_pk, pub_key) = client.generate(KeyType::Ed25519).unwrap();
@@ -117,11 +123,14 @@ mod tests {
         #[test]
         fn rpc_sign_with_bls() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                SealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
-                Client::new(client_sock);
+            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
             let (sealed_pk, pub_key) = client.generate(KeyType::BLS).unwrap();
@@ -141,11 +150,14 @@ mod tests {
         #[test]
         fn rpc_generate_and_import_secp256k1() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                SealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
-                Client::new(client_sock);
+            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
             let (_, pub_key, handle) = client.generate_and_import(KeyType::Secp256k1).unwrap();
@@ -164,11 +176,14 @@ mod tests {
         #[test]
         fn rpc_generate_and_import_ed25519() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                SealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
-                Client::new(client_sock);
+            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
             let (_, pub_key, handle) = client.generate_and_import(KeyType::Ed25519).unwrap();
@@ -186,11 +201,14 @@ mod tests {
         #[test]
         fn rpc_generate_and_import_bls() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                SealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
-                Client::new(client_sock);
+            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
             let (_, pub_key, handle) = client.generate_and_import(KeyType::BLS).unwrap();
@@ -207,11 +225,14 @@ mod tests {
         #[test]
         fn rpc_uninitialized() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: Server<Passthrough, rand_core::OsRng> = Server::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                SealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, <Passthrough as Sealant>::Credentials> =
-                Client::new(client_sock);
+            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             let err = client.generate(KeyType::Secp256k1).unwrap_err();
             assert_eq!(
@@ -230,11 +251,11 @@ mod tests {
         use crate::crypto::{Blake2b256, KeyType, PublicKey, Signature};
         use crate::rpc::{
             client::{AsyncClient, Error as ClientError},
-            server::AsyncServer,
+            server::Server,
             Error,
         };
-        use crate::tests::{DummyCredentials, Passthrough};
-        use crate::{macros::unwrap_as, Sealant};
+        use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
+        use crate::{macros::unwrap_as, AsyncSealedSigner};
         use blake2::Digest;
         use signature::DigestVerifier;
         use tokio::net::UnixStream;
@@ -242,10 +263,13 @@ mod tests {
         #[tokio::test]
         async fn rpc_sign_with_secp256k1() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: AsyncServer<Passthrough, rand_core::OsRng> =
-                AsyncServer::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                AsyncSealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
 
-            let mut client: AsyncClient<UnixStream, <Passthrough as Sealant>::Credentials> =
+            let mut client: AsyncClient<UnixStream, DummyCredentials> =
                 AsyncClient::new(client_sock);
 
             futures::join!(
@@ -274,10 +298,13 @@ mod tests {
         #[tokio::test]
         async fn rpc_uninitialized() {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
-            let mut server: AsyncServer<Passthrough, rand_core::OsRng> =
-                AsyncServer::new(rand_core::OsRng);
+            let mut server: Server<
+                PassthroughFactory,
+                AsyncSealedSigner<Passthrough>,
+                rand_core::OsRng,
+            > = Server::new(PassthroughFactory, rand_core::OsRng);
 
-            let mut client: AsyncClient<UnixStream, <Passthrough as Sealant>::Credentials> =
+            let mut client: AsyncClient<UnixStream, DummyCredentials> =
                 AsyncClient::new(client_sock);
 
             futures::join!(

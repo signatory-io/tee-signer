@@ -1,5 +1,8 @@
 use crate::rpc::{Error as RPCError, Request, Result as RPCResult};
-use crate::{AsyncSealant, AsyncSealedSigner, SealedSigner, SyncSealant, TryFromCBOR, TryIntoCBOR};
+use crate::{
+    AsyncSealant, AsyncSealedSigner, Error as SignerError, Sealant, SealantFactory, SealedSigner,
+    SyncSealant, TryFromCBOR, TryIntoCBOR,
+};
 use rand_core::CryptoRngCore;
 use serde::de::DeserializeOwned;
 use std::io::{self, Read, Write};
@@ -60,33 +63,31 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 #[derive(Debug)]
-struct Inner<S, R> {
+pub struct Server<F, S, R> {
+    fact: F,
     signer: Option<S>,
     rng: R,
 }
 
-impl<S, R> Inner<S, R> {
-    pub fn new(r: R) -> Self {
+impl<F, S, R> Server<F, S, R> {
+    pub fn new(fact: F, rng: R) -> Self {
         Self {
+            fact,
             signer: None,
-            rng: r,
+            rng,
         }
     }
 }
 
-#[derive(Debug)]
-pub struct Server<S, R>(Inner<SealedSigner<S>, R>);
-
-impl<S, R> Server<S, R>
+impl<F, R> Server<F, SealedSigner<F::Output>, R>
 where
-    S: SyncSealant,
-    S::Credentials: DeserializeOwned,
+    F: SealantFactory,
+    F::Output: SyncSealant,
+    F::Credentials: DeserializeOwned,
     R: CryptoRngCore,
+    RPCError:
+        From<<F::Output as Sealant>::Error> + From<SignerError<<F::Output as Sealant>::Error>>,
 {
-    pub fn new(r: R) -> Self {
-        Self(Inner::new(r))
-    }
-
     pub fn serve_connection<T: Read + Write>(&mut self, mut sock: T) -> Result<(), Error> {
         let mut buf = Vec::<u8>::new();
         let mut w_buf = Vec::<u8>::new();
@@ -111,7 +112,7 @@ where
     }
 
     fn handle_message(&mut self, buf: &mut Vec<u8>) -> Result<bool, Error> {
-        let req = Request::<S::Credentials>::try_from_cbor(buf);
+        let req = Request::<F::Credentials>::try_from_cbor(buf);
         buf.clear();
 
         let req = match req {
@@ -125,12 +126,12 @@ where
             }
         };
 
-        match (req, &mut self.0.signer) {
+        match (req, &mut self.signer) {
             (Request::Terminate, _) => RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false)),
 
-            (Request::Initialize(cred), None) => match SealedSigner::try_new(cred) {
-                Ok(signer) => {
-                    self.0.signer = Some(signer);
+            (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
+                Ok(sealant) => {
+                    self.signer = Some(sealant.into());
                     RPCResult::<()>::Ok(())
                 }
                 Err(err) => RPCResult::<()>::Err(err.into()),
@@ -155,13 +156,13 @@ where
                 .and(Ok(true)),
 
             (Request::Generate(t), Some(signer)) => signer
-                .generate(t, &mut self.0.rng)
+                .generate(t, &mut self.rng)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(true)),
 
             (Request::GenerateAndImport(t), Some(signer)) => signer
-                .generate_and_import(t, &mut self.0.rng)
+                .generate_and_import(t, &mut self.rng)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(true)),
@@ -194,19 +195,15 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct AsyncServer<S, R>(Inner<AsyncSealedSigner<S>, R>);
-
-impl<S, R> AsyncServer<S, R>
+impl<F, R> Server<F, AsyncSealedSigner<F::Output>, R>
 where
-    S: AsyncSealant,
-    S::Credentials: DeserializeOwned,
+    F: SealantFactory,
+    F::Output: AsyncSealant,
+    F::Credentials: DeserializeOwned,
     R: CryptoRngCore,
+    RPCError:
+        From<<F::Output as Sealant>::Error> + From<SignerError<<F::Output as Sealant>::Error>>,
 {
-    pub fn new(r: R) -> Self {
-        Self(Inner::new(r))
-    }
-
     pub async fn serve_connection<T: AsyncRead + AsyncWrite + Unpin>(
         &mut self,
         mut sock: T,
@@ -234,7 +231,7 @@ where
     }
 
     async fn handle_message(&mut self, buf: &mut Vec<u8>) -> Result<bool, Error> {
-        let req = Request::<S::Credentials>::try_from_cbor(buf);
+        let req = Request::<F::Credentials>::try_from_cbor(buf);
         buf.clear();
 
         let req = match req {
@@ -248,12 +245,12 @@ where
             }
         };
 
-        match (req, &mut self.0.signer) {
+        match (req, &mut self.signer) {
             (Request::Terminate, _) => RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false)),
 
-            (Request::Initialize(cred), None) => match AsyncSealedSigner::try_new(cred).await {
-                Ok(signer) => {
-                    self.0.signer = Some(signer);
+            (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
+                Ok(sealant) => {
+                    self.signer = Some(sealant.into());
                     RPCResult::<()>::Ok(())
                 }
                 Err(err) => RPCResult::<()>::Err(err.into()),
@@ -279,14 +276,14 @@ where
                 .and(Ok(true)),
 
             (Request::Generate(t), Some(signer)) => signer
-                .generate(t, &mut self.0.rng)
+                .generate(t, &mut self.rng)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(true)),
 
             (Request::GenerateAndImport(t), Some(signer)) => signer
-                .generate_and_import(t, &mut self.0.rng)
+                .generate_and_import(t, &mut self.rng)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)

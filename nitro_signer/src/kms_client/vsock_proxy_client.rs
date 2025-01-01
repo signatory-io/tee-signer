@@ -7,14 +7,15 @@ use hyper::{
 };
 use std::{future::Future, io, pin::Pin, task::Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
-
-pub use vsock::asio::VSockStream;
-pub use vsock::SocketAddr;
+use vsock::{asio::VSockStream, SocketAddr};
 
 struct VSockConnection(VSockStream);
 
 impl Connection for VSockConnection {
     fn connected(&self) -> Connected {
+        // this is exactly what tells the upper layer that
+        // this is a proxied connection and it should use a full
+        // form of an URL in HTTP requests --eugene
         Connected::new().proxy(true)
     }
 }
