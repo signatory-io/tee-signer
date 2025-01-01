@@ -1,7 +1,9 @@
 mod vsock_proxy_client;
 
-use aws_credential_types::Credentials as AWSCredentials;
-use aws_sdk_kms::client::Client as KMSClient;
+use aws_sdk_kms::{
+    client::Client as KMSClient,
+    config::{Credentials as AWSCredentials, Region, SharedCredentialsProvider},
+};
 use serde::{Deserialize, Serialize};
 use signer_core::{AsyncSealant, Sealant, SealantFactory};
 use vsock::SocketAddr as VSockAddr;
@@ -55,7 +57,8 @@ impl SealantFactory for ClientFactory {
         let conf = self
             .aws_config
             .to_builder()
-            .region(aws_types::region::Region::new(credentials.region.clone()))
+            .region(Region::new(credentials.region.clone()))
+            .credentials_provider(SharedCredentialsProvider::new(cred))
             .http_client(vsock_proxy_client::build(VSockAddr::new(
                 self.config.proxy_cid.unwrap_or(VSOCK_PROXY_CID),
                 self.config.proxy_port.unwrap_or(DEFAULT_VSOCK_PROXY_PORT),

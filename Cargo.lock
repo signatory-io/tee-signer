@@ -1286,12 +1286,10 @@ name = "nitro_signer"
 version = "0.1.0"
 dependencies = [
  "aws-config",
- "aws-credential-types",
  "aws-nitro-enclaves-nsm-api",
  "aws-sdk-kms",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
- "aws-types",
  "hyper",
  "rand_core",
  "serde",
