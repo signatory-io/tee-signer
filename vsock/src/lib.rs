@@ -15,6 +15,7 @@ use utils::{
 
 pub const VMADDR_CID_LOCAL: libc::c_uint = 1;
 
+#[derive(Clone)]
 pub struct SocketAddr(libc::sockaddr_vm);
 
 impl SocketAddr {

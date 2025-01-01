@@ -1,4 +1,1 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct KMSCredentials {}
+mod vsock_proxy_client;
