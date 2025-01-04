@@ -1,40 +1,57 @@
 mod vsock_proxy_client;
 
+use aws_config::SdkConfig;
+pub use aws_sdk_kms::types::EncryptionAlgorithmSpec;
 use aws_sdk_kms::{
     client::Client as KMSClient,
     config::{Credentials as AWSCredentials, Region, SharedCredentialsProvider},
+    error::SdkError,
+    types::RecipientInfo,
 };
+use cbc::cipher::{self, block_padding, BlockDecryptMut, IvSizeUser, KeyIvInit, KeySizeUser};
+use const_oid::{
+    db::{
+        rfc5911::{ID_AES_256_CBC, ID_DATA, ID_ENVELOPED_DATA},
+        rfc5912::ID_RSAES_OAEP,
+    },
+    ObjectIdentifier,
+};
+use rsa::{Oaep, RsaPrivateKey};
 use serde::{Deserialize, Serialize};
 use signer_core::{AsyncSealant, Sealant, SealantFactory};
 use vsock::SocketAddr as VSockAddr;
+use zeroize::Zeroize;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Credentials {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub session_token: String,
-    pub region: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct Config {
+    pub attestation_doc: Vec<u8>,
+    pub algorithm_spec: EncryptionAlgorithmSpec,
+    pub key_id: String,
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
+    pub region: String,
+    pub endpoint: Option<String>,
+    pub client_key: RsaPrivateKey,
 }
 
 pub const DEFAULT_VSOCK_PROXY_PORT: u32 = 8000;
 pub const VSOCK_PROXY_CID: u32 = 3;
 
 pub struct ClientFactory {
-    aws_config: aws_config::SdkConfig,
+    sdk_config: aws_config::SdkConfig,
     config: Config,
 }
 
 impl ClientFactory {
-    pub async fn new(config: Config) -> Self {
-        Self {
-            aws_config: aws_config::from_env().load().await,
-            config,
-        }
+    pub fn new(config: Config, sdk_config: SdkConfig) -> Self {
+        Self { sdk_config, config }
     }
 }
 
@@ -54,18 +71,23 @@ impl SealantFactory for ClientFactory {
             "RPC",
         );
 
-        let conf = self
-            .aws_config
+        let mut builder = self
+            .sdk_config
             .to_builder()
-            .region(Region::new(credentials.region.clone()))
             .credentials_provider(SharedCredentialsProvider::new(cred))
+            .region(Region::new(self.config.region.clone()))
             .http_client(vsock_proxy_client::build(VSockAddr::new(
                 self.config.proxy_cid.unwrap_or(VSOCK_PROXY_CID),
                 self.config.proxy_port.unwrap_or(DEFAULT_VSOCK_PROXY_PORT),
-            )))
-            .build();
+            )));
 
+        if let Some(ep) = &self.config.endpoint {
+            builder.set_endpoint_url(Some(ep.clone()));
+        }
+
+        let conf = builder.build();
         Ok(Client {
+            config: self.config.clone(),
             client: KMSClient::new(&conf),
         })
     }
@@ -73,18 +95,283 @@ impl SealantFactory for ClientFactory {
 
 pub struct Client {
     client: KMSClient,
+    config: Config,
 }
 
+impl Client {}
+
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
+struct ParsedEnvelopedData {
+    cipher_key: Vec<u8>,
+    iv: Vec<u8>,
+    cipher_text: Vec<u8>,
+}
+
+const ENVELOPED_DATA_VERSION: u8 = 2;
+const ENVELOPED_DATA_RECIPIENT_VERSION: u8 = 2;
+
+fn parse_enveloped_data(src: &[u8]) -> Result<ParsedEnvelopedData, Error> {
+    let mut data = ale::Bytes::new(src);
+
+    // ContentInfo
+    let mut content_info = data.get_elem(Some(ale::ASN1_SEQUENCE))?.contents();
+    let ct = content_info.get::<ObjectIdentifier>()?;
+    if ct != ID_ENVELOPED_DATA {
+        return Err(Error::ContentType(ct));
+    }
+    let mut contents = content_info
+        .get_elem(Some(0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC))? // explicit tag 0
+        .contents()
+        .get_elem(Some(ale::ASN1_SEQUENCE))?
+        .contents();
+
+    // EnvelopedData
+    let ver = contents
+        .get_elem(Some(ale::ASN1_INTEGER))?
+        .contents()
+        .get_u8()?;
+    if ver != ENVELOPED_DATA_VERSION {
+        return Err(Error::Version(ver));
+    }
+
+    // skip OriginatorInfo
+    contents.get_optional_elem(0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC)?; // implicit tag 0
+
+    // RecipientInfos
+    let mut recipient_info = contents
+        .get_elem(Some(ale::ASN1_SET))?
+        .contents()
+        .get_elem(Some(ale::ASN1_SEQUENCE))?
+        .contents();
+    let ver = recipient_info
+        .get_elem(Some(ale::ASN1_INTEGER))?
+        .contents()
+        .get_u8()?;
+    if ver != ENVELOPED_DATA_RECIPIENT_VERSION {
+        return Err(Error::Version(ver));
+    }
+
+    // skip RecipientIdentifier
+    let _ = recipient_info.get_elem(None);
+
+    // KeyEncryptionAlgorithmIdentifier
+    let algo = recipient_info
+        .get_elem(Some(ale::ASN1_SEQUENCE))?
+        .contents()
+        .get::<ObjectIdentifier>()?;
+    if algo != ID_RSAES_OAEP {
+        return Err(Error::Algorithm(algo));
+    }
+    let encrypted_key = recipient_info.get_elem(Some(ale::ASN1_OCTETSTRING))?.value;
+
+    // EncryptedContentInfo
+    let mut encrypted_content_info = contents.get_elem(Some(ale::ASN1_SEQUENCE))?.contents();
+    let ct = encrypted_content_info.get::<ObjectIdentifier>()?;
+    if ct != ID_DATA {
+        return Err(Error::ContentType(ct));
+    }
+    let mut algo_id = encrypted_content_info
+        .get_elem(Some(ale::ASN1_SEQUENCE))?
+        .contents();
+    let algo = algo_id.get::<ObjectIdentifier>()?;
+    if algo != ID_AES_256_CBC {
+        return Err(Error::Algorithm(algo));
+    }
+    let iv = algo_id.get_elem(Some(ale::ASN1_OCTETSTRING))?.value;
+
+    // EncryptedContent
+    let encrypted_content = encrypted_content_info.get_elem(None)?;
+
+    let cipher_text = if encrypted_content.tag == 0 | ale::ASN1_CONTEXT_SPECIFIC {
+        Vec::from(encrypted_content.value)
+    } else if encrypted_content.tag & ale::ASN1_CONSTRUCTED != 0 {
+        let mut data: Vec<u8> = Vec::with_capacity(encrypted_content.value.len());
+        let mut stream = encrypted_content.contents();
+
+        while !stream.is_eoc() {
+            let chunk = stream.get_elem(Some(ale::ASN1_OCTETSTRING))?.value;
+            data.extend_from_slice(chunk);
+        }
+        data
+    } else {
+        return Err(Error::Ber(ale::Error::Tag(encrypted_content.tag)));
+    };
+
+    Ok(ParsedEnvelopedData {
+        cipher_key: encrypted_key.into(),
+        iv: iv.into(),
+        cipher_text,
+    })
+}
+
+#[derive(Debug)]
+pub enum Error {
+    Sdk(aws_sdk_kms::Error),
+    Ber(ale::Error),
+    ContentType(ObjectIdentifier),
+    Algorithm(ObjectIdentifier),
+    Version(u8),
+    MissingData,
+    ZeroOutput,
+    Rsa(rsa::Error),
+    KeySize(usize),
+    IvSize(usize),
+    Unpad,
+}
+
+impl<E, R> From<SdkError<E, R>> for Error
+where
+    aws_sdk_kms::Error: From<SdkError<E, R>>,
+{
+    fn from(value: SdkError<E, R>) -> Self {
+        Error::Sdk(value.into())
+    }
+}
+
+impl From<ale::Error> for Error {
+    fn from(value: ale::Error) -> Self {
+        Error::Ber(value)
+    }
+}
+
+impl From<rsa::Error> for Error {
+    fn from(value: rsa::Error) -> Self {
+        Error::Rsa(value)
+    }
+}
+
+impl From<block_padding::UnpadError> for Error {
+    fn from(_: block_padding::UnpadError) -> Self {
+        Error::Unpad
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Sdk(error) => write!(f, "SDK error: {}", error),
+            Error::ZeroOutput => f.write_str("zero output"),
+            Error::Ber(error) => write!(f, "BER error: {}", error),
+            Error::ContentType(object_identifier) => {
+                write!(f, "unexpected content type: {}", object_identifier)
+            }
+            Error::Version(cms_version) => write!(f, "unexpected CMS version: {:?}", cms_version),
+            Error::Algorithm(object_identifier) => {
+                write!(f, "unexpected encryption algorithm: {}", object_identifier)
+            }
+            Error::MissingData => f.write_str("some data is missing"),
+            Error::Rsa(error) => write!(f, "RSA error: {}", error),
+            Error::KeySize(v) => write!(f, "invalid key size: {}", v),
+            Error::IvSize(v) => write!(f, "invalid iv size: {}", v),
+            Error::Unpad => f.write_str("unpad error"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
 impl Sealant for Client {
-    type Error = aws_sdk_kms::Error;
+    type Error = Error;
 }
 
 impl AsyncSealant for Client {
     async fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        todo!()
+        let res = self
+            .client
+            .encrypt()
+            .key_id(&self.config.key_id)
+            .plaintext(src.into())
+            .encryption_algorithm(self.config.algorithm_spec.clone())
+            .send()
+            .await?;
+
+        match res.ciphertext_blob {
+            Some(val) => Ok(val.into()),
+            None => Err(Error::ZeroOutput),
+        }
     }
 
     async fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        todo!()
+        let ri = RecipientInfo::builder()
+            .attestation_document((&self.config.attestation_doc[..]).into())
+            .build();
+
+        let res = self
+            .client
+            .decrypt()
+            .key_id(&self.config.key_id)
+            .ciphertext_blob(src.into())
+            .encryption_algorithm(self.config.algorithm_spec.clone())
+            .recipient(ri)
+            .send()
+            .await?;
+
+        match res.ciphertext_for_recipient {
+            Some(val) => {
+                let data = parse_enveloped_data(val.as_ref())?;
+                decrypt_cfr(&data, &self.config.client_key)
+            }
+            None => Err(Error::ZeroOutput),
+        }
     }
+}
+
+type Aes256Cbc = cbc::Decryptor<aes::Aes256>;
+
+fn decrypt_cfr(data: &ParsedEnvelopedData, client_key: &RsaPrivateKey) -> Result<Vec<u8>, Error> {
+    let cipher_key = client_key.decrypt(Oaep::new::<sha2::Sha256>(), &data.cipher_key)?;
+
+    if cipher_key.len() != Aes256Cbc::key_size() {
+        return Err(Error::KeySize(cipher_key.len()));
+    }
+    if data.iv.len() != Aes256Cbc::iv_size() {
+        return Err(Error::IvSize(data.iv.len()));
+    }
+
+    let mut key_buf = cipher::Key::<Aes256Cbc>::clone_from_slice(&cipher_key);
+    key_buf.zeroize();
+    let iv_buf = cipher::Iv::<Aes256Cbc>::clone_from_slice(&data.iv);
+
+    let dec = Aes256Cbc::new(&key_buf, &iv_buf);
+    Ok(dec.decrypt_padded_vec_mut::<block_padding::Pkcs7>(&data.cipher_text)?)
+}
+
+#[test]
+fn parse_and_decrypt() {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+
+    const CIPHER_TEXT_STR: &str = "MIAGCSqGSIb3DQEHA6CAMIACAQIxggFrMIIBZwIBAoAgljGgxlmRCtWqvB/s/Aw+ZNTDlc6Uka86SLVmlNmFGAMwPAYJKoZIhvcNAQEHMC+gDzANBglghkgBZQMEAgEFAKEcMBoGCSqGSIb3DQEBCDANBglghkgBZQMEAgEFAASCAQAXmjTiHpg+OcYaf2ISaDNpQcEOq61Sm3re3v+5z2hZPe8eoUGhmMS6pCuC+BRW7RpkjwDaXQzzR/jExnraEET3lj9oyAMMwKIahhHHIZ33qOTq1c/9NtMVZmm/j4UfyCpP8WMAFb2hvwIJbjnAGO9Xbw+NzWaQdvEyNDGUX+bPIuSDc75jjGH5KtdFLopk5k6nsTdU26qLkVE6Mg9Y//s0OJCvmYFgfw15IXDb50xJupWxCwbqGXWmfTBEo9M9AhelVbOXkitZR7hbnT6BZnsfpS2acZRNL4XxC+gg4Ml9fOiYsGWqSK8Lkwlp22rtL70CIHnggbb+oIE4ObR4TV8qMIAGCSqGSIb3DQEHATAdBglghkgBZQMEASoEEEMr/6uiZK+CzgfJvr61JTGggAQwfp0W0Q/QPYmg6AoC3DkE5+beNswVOX9ct5IIgIsvaAhTF9IiHdbX7yLa8YS2WQ/FAAAAAAAAAAAAAA==";
+    let cipher_text = STANDARD.decode(CIPHER_TEXT_STR).unwrap();
+
+    let data = parse_enveloped_data(&cipher_text).unwrap();
+    assert_eq!(
+        data,
+        ParsedEnvelopedData {
+            cipher_key: vec![
+                23, 154, 52, 226, 30, 152, 62, 57, 198, 26, 127, 98, 18, 104, 51, 105, 65, 193, 14,
+                171, 173, 82, 155, 122, 222, 222, 255, 185, 207, 104, 89, 61, 239, 30, 161, 65,
+                161, 152, 196, 186, 164, 43, 130, 248, 20, 86, 237, 26, 100, 143, 0, 218, 93, 12,
+                243, 71, 248, 196, 198, 122, 218, 16, 68, 247, 150, 63, 104, 200, 3, 12, 192, 162,
+                26, 134, 17, 199, 33, 157, 247, 168, 228, 234, 213, 207, 253, 54, 211, 21, 102,
+                105, 191, 143, 133, 31, 200, 42, 79, 241, 99, 0, 21, 189, 161, 191, 2, 9, 110, 57,
+                192, 24, 239, 87, 111, 15, 141, 205, 102, 144, 118, 241, 50, 52, 49, 148, 95, 230,
+                207, 34, 228, 131, 115, 190, 99, 140, 97, 249, 42, 215, 69, 46, 138, 100, 230, 78,
+                167, 177, 55, 84, 219, 170, 139, 145, 81, 58, 50, 15, 88, 255, 251, 52, 56, 144,
+                175, 153, 129, 96, 127, 13, 121, 33, 112, 219, 231, 76, 73, 186, 149, 177, 11, 6,
+                234, 25, 117, 166, 125, 48, 68, 163, 211, 61, 2, 23, 165, 85, 179, 151, 146, 43,
+                89, 71, 184, 91, 157, 62, 129, 102, 123, 31, 165, 45, 154, 113, 148, 77, 47, 133,
+                241, 11, 232, 32, 224, 201, 125, 124, 232, 152, 176, 101, 170, 72, 175, 11, 147, 9,
+                105, 219, 106, 237, 47, 189, 2, 32, 121, 224, 129, 182, 254, 160, 129, 56, 57, 180,
+                120, 77, 95, 42
+            ],
+            iv: vec![67, 43, 255, 171, 162, 100, 175, 130, 206, 7, 201, 190, 190, 181, 37, 49],
+            cipher_text: vec![
+                126, 157, 22, 209, 15, 208, 61, 137, 160, 232, 10, 2, 220, 57, 4, 231, 230, 222,
+                54, 204, 21, 57, 127, 92, 183, 146, 8, 128, 139, 47, 104, 8, 83, 23, 210, 34, 29,
+                214, 215, 239, 34, 218, 241, 132, 182, 89, 15, 197
+            ]
+        }
+    );
 }

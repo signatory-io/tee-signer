@@ -133,14 +133,14 @@ mod tests {
             let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
-            let (sealed_pk, pub_key) = client.generate(KeyType::BLS).unwrap();
+            let (sealed_pk, pub_key) = client.generate(KeyType::Bls).unwrap();
 
             let data = b"text";
             let sig = unwrap_as!(
                 client.try_sign_with(&sealed_pk, data).unwrap(),
-                Signature::BLS
+                Signature::Bls
             );
-            let pub_key = unwrap_as!(pub_key, PublicKey::BLS);
+            let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
             pub_key.verify(data, &sig).unwrap();
 
             client.terminate().unwrap();
@@ -211,11 +211,11 @@ mod tests {
             let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
             client.initialize(DummyCredentials).unwrap();
-            let (_, pub_key, handle) = client.generate_and_import(KeyType::BLS).unwrap();
+            let (_, pub_key, handle) = client.generate_and_import(KeyType::Bls).unwrap();
 
             let data = b"text";
-            let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::BLS);
-            let pub_key = unwrap_as!(pub_key, PublicKey::BLS);
+            let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Bls);
+            let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
             pub_key.verify(data, &sig).unwrap();
 
             client.terminate().unwrap();

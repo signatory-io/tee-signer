@@ -25,7 +25,7 @@ pub enum KeyType {
     Secp256k1,
     NistP256,
     Ed25519,
-    BLS,
+    Bls,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,7 +33,7 @@ pub enum Signature {
     Secp256k1(::ecdsa::Signature<Secp256k1>),
     NistP256(::ecdsa::Signature<NistP256>),
     Ed25519(ed25519::Signature),
-    BLS(bls::Signature),
+    Bls(bls::Signature),
 }
 
 pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
@@ -54,7 +54,7 @@ pub enum PrivateKey {
     Secp256k1(ecdsa::SigningKey<::ecdsa::SigningKey<Secp256k1>>),
     NistP256(ecdsa::SigningKey<::ecdsa::SigningKey<NistP256>>),
     Ed25519(ed25519_dalek::SigningKey),
-    BLS(bls::SigningKey),
+    Bls(bls::SigningKey),
 }
 
 impl PrivateKey {
@@ -63,7 +63,7 @@ impl PrivateKey {
             KeyType::Secp256k1 => Ok(PrivateKey::Secp256k1(ecdsa::SigningKey::random(r).unwrap())),
             KeyType::NistP256 => Ok(PrivateKey::NistP256(ecdsa::SigningKey::random(r).unwrap())),
             KeyType::Ed25519 => Ok(PrivateKey::Ed25519(ed25519_dalek::SigningKey::generate(r))),
-            KeyType::BLS => Ok(PrivateKey::BLS(bls::SigningKey::random(r)?)),
+            KeyType::Bls => Ok(PrivateKey::Bls(bls::SigningKey::random(r)?)),
         }
     }
 }
@@ -74,7 +74,7 @@ impl KeyPair for PrivateKey {
             PrivateKey::Secp256k1(val) => val.try_sign(msg),
             PrivateKey::NistP256(val) => val.try_sign(msg),
             PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg),
-            PrivateKey::BLS(val) => val.try_sign(msg),
+            PrivateKey::Bls(val) => val.try_sign(msg),
         }
     }
 
@@ -83,7 +83,7 @@ impl KeyPair for PrivateKey {
             PrivateKey::Secp256k1(val) => val.public_key(),
             PrivateKey::NistP256(val) => val.public_key(),
             PrivateKey::Ed25519(val) => val.public_key(),
-            PrivateKey::BLS(val) => val.public_key(),
+            PrivateKey::Bls(val) => val.public_key(),
         }
     }
 }
@@ -93,14 +93,14 @@ pub enum PublicKey {
     Secp256k1(::ecdsa::VerifyingKey<Secp256k1>),
     NistP256(::ecdsa::VerifyingKey<NistP256>),
     Ed25519(ed25519_dalek::VerifyingKey),
-    BLS(bls::PublicKey),
+    Bls(bls::PublicKey),
 }
 
 #[derive(Debug)]
 pub enum Error {
     InvalidHandle,
     Signature(SignatureError),
-    BLS(bls::Error),
+    Bls(bls::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -108,7 +108,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::InvalidHandle => f.write_str("invalid handle"),
             Error::Signature(_) => f.write_str("signature error"),
-            Error::BLS(_) => f.write_str("BLST error"),
+            Error::Bls(_) => f.write_str("BLST error"),
         }
     }
 }
@@ -117,7 +117,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Signature(e) => e.source(),
-            Error::BLS(e) => Some(e),
+            Error::Bls(e) => Some(e),
             _ => None,
         }
     }
@@ -131,7 +131,7 @@ impl From<SignatureError> for Error {
 
 impl From<bls::Error> for Error {
     fn from(value: bls::Error) -> Self {
-        Error::BLS(value)
+        Error::Bls(value)
     }
 }
 
@@ -150,7 +150,7 @@ impl Keychain {
             PrivateKey::Secp256k1(val) => Box::new(val),
             PrivateKey::NistP256(val) => Box::new(val),
             PrivateKey::Ed25519(val) => Box::new(val),
-            PrivateKey::BLS(val) => Box::new(val),
+            PrivateKey::Bls(val) => Box::new(val),
         };
         self.keys.push(signer);
         self.keys.len() - 1
@@ -192,7 +192,7 @@ mod tests {
     impl_pk_serde_test!(serde_pk_nist_p256, NistP256);
     impl_pk_serde_test!(serde_pk_secp256k1, Secp256k1);
     impl_pk_serde_test!(serde_pk_ed25519, Ed25519);
-    impl_pk_serde_test!(serde_pk_bls, BLS);
+    impl_pk_serde_test!(serde_pk_bls, Bls);
 
     macro_rules! impl_pubkey_serde_test {
         ($name:ident, $ty:tt) => {
@@ -211,7 +211,7 @@ mod tests {
     impl_pubkey_serde_test!(serde_pubkey_nist_p256, NistP256);
     impl_pubkey_serde_test!(serde_pubkey_secp256k1, Secp256k1);
     impl_pubkey_serde_test!(serde_pubkey_ed25519, Ed25519);
-    impl_pubkey_serde_test!(serde_pubkey_bls, BLS);
+    impl_pubkey_serde_test!(serde_pubkey_bls, Bls);
 
     macro_rules! impl_sig_serde_test {
         ($name:ident, $ty:tt) => {
@@ -230,7 +230,7 @@ mod tests {
     impl_sig_serde_test!(serde_sig_nist_p256, NistP256);
     impl_sig_serde_test!(serde_sig_secp256k1, Secp256k1);
     impl_sig_serde_test!(serde_sig_ed25519, Ed25519);
-    impl_sig_serde_test!(serde_sig_bls, BLS);
+    impl_sig_serde_test!(serde_sig_bls, Bls);
 
     #[test]
     fn keychain_secp256k1() {
@@ -287,12 +287,12 @@ mod tests {
     #[test]
     fn keychain_bls() {
         let mut keychain = Keychain::new();
-        let pk = PrivateKey::generate(KeyType::BLS, &mut rand_core::OsRng).unwrap();
+        let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
         let handle = keychain.import(pk);
 
         let data = b"text";
-        let sig = unwrap_as!(keychain.try_sign(handle, data).unwrap(), Signature::BLS);
-        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::BLS);
+        let sig = unwrap_as!(keychain.try_sign(handle, data).unwrap(), Signature::Bls);
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
 
         pub_key.verify(data, &sig).unwrap();
     }

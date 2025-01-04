@@ -109,12 +109,12 @@ impl Random for SigningKey {
 
 impl KeyPair for SigningKey {
     fn public_key(&self) -> CryptoPublicKey {
-        CryptoPublicKey::BLS(PublicKey(self.sk_to_pk()))
+        CryptoPublicKey::Bls(PublicKey(self.sk_to_pk()))
     }
 
     fn try_sign(&self, msg: &[u8]) -> Result<CryptoSignature, CryptoError> {
         let aug = self.sk_to_pk().to_bytes();
-        Ok(CryptoSignature::BLS(Signature(
+        Ok(CryptoSignature::Bls(Signature(
             self.sign(msg, BLS_DST, &aug),
         )))
     }

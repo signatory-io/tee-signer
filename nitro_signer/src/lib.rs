@@ -1,3 +1,4 @@
+pub use aws_config;
 use signer_core::AsyncSealedSigner;
 
 pub mod kms_client;
