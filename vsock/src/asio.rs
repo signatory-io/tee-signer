@@ -1,4 +1,4 @@
-use crate::{Datagram, Listener, SocketAddr, Stream};
+use crate::{Datagram as SyncDatagram, Listener as SyncListener, SocketAddr, Stream as SyncStream};
 use std::io::{Error, ErrorKind, Result};
 use std::net::Shutdown;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
@@ -7,17 +7,17 @@ use std::task::{ready, Context, Poll};
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, Interest, ReadBuf, Ready};
 
-pub struct VSockDatagram(AsyncFd<Datagram>);
+pub struct Datagram(AsyncFd<SyncDatagram>);
 
-impl VSockDatagram {
+impl Datagram {
     pub fn unbound() -> Result<Self> {
-        let inner = Datagram::unbound()?;
+        let inner = SyncDatagram::unbound()?;
         inner.set_nonblocking(true)?;
         Ok(Self(AsyncFd::new(inner)?))
     }
 
     pub fn bind(addr: &SocketAddr) -> Result<Self> {
-        let inner = Datagram::bind(addr)?;
+        let inner = SyncDatagram::bind(addr)?;
         inner.set_nonblocking(true)?;
         Ok(Self(AsyncFd::new(inner)?))
     }
@@ -130,7 +130,7 @@ where
     }
 }
 
-impl AsyncRead for VSockDatagram {
+impl AsyncRead for Datagram {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -140,7 +140,7 @@ impl AsyncRead for VSockDatagram {
     }
 }
 
-impl AsyncWrite for VSockDatagram {
+impl AsyncWrite for Datagram {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         poll_write(cx, buf, |buf| self.0.get_ref().send(buf), &self.0)
     }
@@ -155,19 +155,19 @@ impl AsyncWrite for VSockDatagram {
     }
 }
 
-impl AsFd for VSockDatagram {
+impl AsFd for Datagram {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.0.as_fd()
     }
 }
 
-impl AsRawFd for VSockDatagram {
+impl AsRawFd for Datagram {
     fn as_raw_fd(&self) -> RawFd {
         self.0.as_raw_fd()
     }
 }
 
-pub struct VSockStream(AsyncFd<Stream>);
+pub struct Stream(AsyncFd<SyncStream>);
 
 fn is_in_progress(err: &Error) -> bool {
     match err.raw_os_error() {
@@ -179,12 +179,12 @@ fn is_in_progress(err: &Error) -> bool {
     }
 }
 
-impl VSockStream {
+impl Stream {
     pub async fn connect(addr: &SocketAddr) -> Result<Self> {
-        let inner = Stream::unbound()?;
+        let inner = SyncStream::unbound()?;
         inner.set_nonblocking(true)?;
 
-        let sock = VSockStream(AsyncFd::new(inner)?);
+        let sock = Stream(AsyncFd::new(inner)?);
 
         match sock.0.get_ref().connect_to_addr(addr) {
             Ok(()) => Ok(sock),
@@ -228,7 +228,7 @@ impl VSockStream {
     }
 }
 
-impl AsyncRead for VSockStream {
+impl AsyncRead for Stream {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -238,7 +238,7 @@ impl AsyncRead for VSockStream {
     }
 }
 
-impl AsyncWrite for VSockStream {
+impl AsyncWrite for Stream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         poll_write(cx, buf, |buf| self.0.get_ref().send(buf), &self.0)
     }
@@ -253,43 +253,43 @@ impl AsyncWrite for VSockStream {
     }
 }
 
-impl AsFd for VSockStream {
+impl AsFd for Stream {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.0.as_fd()
     }
 }
 
-impl AsRawFd for VSockStream {
+impl AsRawFd for Stream {
     fn as_raw_fd(&self) -> RawFd {
         self.0.as_raw_fd()
     }
 }
 
-pub struct VSockListener(AsyncFd<Listener>);
+pub struct Listener(AsyncFd<SyncListener>);
 
-impl VSockListener {
+impl Listener {
     pub fn bind(addr: &SocketAddr) -> Result<Self> {
-        let inner = Listener::bind(addr)?;
+        let inner = SyncListener::bind(addr)?;
         inner.set_nonblocking(true)?;
         Ok(Self(AsyncFd::new(inner)?))
     }
 
-    pub async fn accept(&self) -> Result<(VSockStream, SocketAddr)> {
+    pub async fn accept(&self) -> Result<(Stream, SocketAddr)> {
         let (stream, addr) = self
             .0
             .async_io(Interest::READABLE, |inner| inner.accept())
             .await?;
         stream.set_nonblocking(true)?;
-        Ok((VSockStream(AsyncFd::new(stream)?), addr))
+        Ok((Stream(AsyncFd::new(stream)?), addr))
     }
 
-    pub fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<Result<(VSockStream, SocketAddr)>> {
+    pub fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<Result<(Stream, SocketAddr)>> {
         loop {
             let mut guard = ready!(self.0.poll_read_ready(cx))?;
             match self.0.get_ref().accept() {
                 Ok((stream, addr)) => {
                     stream.set_nonblocking(true)?;
-                    break Poll::Ready(Ok((VSockStream(AsyncFd::new(stream)?), addr)));
+                    break Poll::Ready(Ok((Stream(AsyncFd::new(stream)?), addr)));
                 }
                 Err(err) => {
                     if err.kind() == ErrorKind::WouldBlock {
@@ -307,13 +307,13 @@ impl VSockListener {
     }
 }
 
-impl AsFd for VSockListener {
+impl AsFd for Listener {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.0.as_fd()
     }
 }
 
-impl AsRawFd for VSockListener {
+impl AsRawFd for Listener {
     fn as_raw_fd(&self) -> RawFd {
         self.0.as_raw_fd()
     }

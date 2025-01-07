@@ -137,7 +137,7 @@ impl From<bls::Error> for Error {
 
 #[derive(Debug)]
 pub struct Keychain {
-    keys: Vec<Box<dyn KeyPair + Send>>,
+    keys: Vec<Box<dyn KeyPair + Send + Sync>>,
 }
 
 impl Keychain {
@@ -146,7 +146,7 @@ impl Keychain {
     }
 
     pub fn import(&mut self, src: PrivateKey) -> usize {
-        let signer: Box<dyn KeyPair + Send> = match src {
+        let signer: Box<dyn KeyPair + Send + Sync> = match src {
             PrivateKey::Secp256k1(val) => Box::new(val),
             PrivateKey::NistP256(val) => Box::new(val),
             PrivateKey::Ed25519(val) => Box::new(val),

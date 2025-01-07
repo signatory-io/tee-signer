@@ -1,8 +1,7 @@
 mod vsock_proxy_client;
 
-use aes::cipher::BlockSizeUser;
 use aws_config::SdkConfig;
-pub use aws_sdk_kms::types::EncryptionAlgorithmSpec;
+pub use aws_sdk_kms::types::{EncryptionAlgorithmSpec, KeyEncryptionMechanism};
 use aws_sdk_kms::{
     client::Client as KMSClient,
     config::{Credentials as AWSCredentials, Region, SharedCredentialsProvider},
@@ -33,8 +32,8 @@ pub struct Credentials {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub attestation_doc: Vec<u8>,
-    pub algorithm_spec: EncryptionAlgorithmSpec,
-    pub key_id: String,
+    pub algorithm_spec: Option<EncryptionAlgorithmSpec>,
+    pub key_id: Option<String>,
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
     pub region: String,
@@ -43,7 +42,7 @@ pub struct Config {
 }
 
 pub const DEFAULT_VSOCK_PROXY_PORT: u32 = 8000;
-pub const VSOCK_PROXY_CID: u32 = 3;
+pub const DEFAULT_VSOCK_PROXY_CID: u32 = 3;
 
 pub struct ClientFactory {
     sdk_config: aws_config::SdkConfig,
@@ -78,7 +77,7 @@ impl SealantFactory for ClientFactory {
             .credentials_provider(SharedCredentialsProvider::new(cred))
             .region(Region::new(self.config.region.clone()))
             .http_client(vsock_proxy_client::build(VSockAddr::new(
-                self.config.proxy_cid.unwrap_or(VSOCK_PROXY_CID),
+                self.config.proxy_cid.unwrap_or(DEFAULT_VSOCK_PROXY_CID),
                 self.config.proxy_port.unwrap_or(DEFAULT_VSOCK_PROXY_PORT),
             )));
 
@@ -280,9 +279,9 @@ impl AsyncSealant for Client {
         let res = self
             .client
             .encrypt()
-            .key_id(&self.config.key_id)
             .plaintext(src.into())
-            .encryption_algorithm(self.config.algorithm_spec.clone())
+            .set_key_id(self.config.key_id.clone())
+            .set_encryption_algorithm(self.config.algorithm_spec.clone())
             .send()
             .await?;
 
@@ -295,14 +294,15 @@ impl AsyncSealant for Client {
     async fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         let ri = RecipientInfo::builder()
             .attestation_document((&self.config.attestation_doc[..]).into())
+            .key_encryption_algorithm(KeyEncryptionMechanism::RsaesOaepSha256)
             .build();
 
         let res = self
             .client
             .decrypt()
-            .key_id(&self.config.key_id)
             .ciphertext_blob(src.into())
-            .encryption_algorithm(self.config.algorithm_spec.clone())
+            .set_key_id(self.config.key_id.clone())
+            .set_encryption_algorithm(self.config.algorithm_spec.clone())
             .recipient(ri)
             .send()
             .await?;

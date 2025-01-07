@@ -2,7 +2,7 @@
 mod linux {
     use std::thread;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use vsock::asio::{VSockListener, VSockStream};
+    use vsock::asio::{Listener, Stream};
     use vsock::{Listener, SocketAddr, Stream, VMADDR_CID_ANY, VMADDR_CID_LOCAL, VMADDR_PORT_ANY};
 
     #[test]

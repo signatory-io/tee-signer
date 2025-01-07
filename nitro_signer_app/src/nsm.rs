@@ -1,10 +1,18 @@
 pub use aws_nitro_enclaves_nsm_api::api::{ErrorCode, Request, Response};
 use aws_nitro_enclaves_nsm_api::driver::{nsm_init, nsm_process_request};
-use rsa::pkcs8::{spki, EncodePublicKey};
+use nitro_signer::{
+    rand_core::{CryptoRng, RngCore},
+    rsa::{
+        self,
+        pkcs8::{spki, EncodePublicKey},
+        rand_core,
+    },
+};
 use std::{
     alloc::{alloc, dealloc, Layout},
     cmp, fs, io, mem,
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    sync::Arc,
 };
 
 pub struct NSM(OwnedFd);
@@ -93,6 +101,46 @@ impl std::fmt::Display for Error {
         }
     }
 }
+
+impl std::error::Error for Error {}
+
+pub struct SharedRng(Arc<NSM>);
+
+impl SharedRng {
+    pub fn new(nsm: Arc<NSM>) -> Self {
+        Self(nsm)
+    }
+}
+
+impl RngCore for SharedRng {
+    fn next_u32(&mut self) -> u32 {
+        rand_core::impls::next_u32_via_fill(self)
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        rand_core::impls::next_u64_via_fill(self)
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        if let Err(err) = self.try_fill_bytes(dest) {
+            panic!("NSM::fill_bytes(): {}", err);
+        }
+    }
+
+    fn try_fill_bytes(&mut self, mut dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        Ok(while dest.len() != 0 {
+            let v = match self.0.get_random_vec() {
+                Ok(v) => v,
+                Err(err) => return Err(rand_core::Error::new(Box::new(err))),
+            };
+            let sz = std::cmp::min(v.len(), dest.len());
+            (&mut dest[..sz]).copy_from_slice(&v);
+            dest = &mut dest[sz..];
+        })
+    }
+}
+
+impl CryptoRng for SharedRng {}
 
 const RNDADDENTROPY: libc::c_ulong = 0x40085203;
 
