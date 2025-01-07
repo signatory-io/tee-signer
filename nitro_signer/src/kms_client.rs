@@ -112,90 +112,129 @@ const ENVELOPED_DATA_VERSION: u8 = 2;
 const ENVELOPED_DATA_RECIPIENT_VERSION: u8 = 2;
 
 fn parse_enveloped_data(src: &[u8]) -> Result<ParsedEnvelopedData, Error> {
-    let mut data = ale::Bytes::new(src);
+    use ale::ExpectSome;
+    let mut stream = ale::Stream::new(src);
 
     // ContentInfo
-    let mut content_info = data.get_elem(Some(ale::ASN1_SEQUENCE))?.contents();
-    let ct = content_info.get::<ObjectIdentifier>()?;
+    let content_info = ale::new_document(&mut stream, Some(ale::ASN1_SEQUENCE)).expect_some()?;
+    let ct = content_info
+        .get_tagged::<ObjectIdentifier>(&mut stream)
+        .expect_some()?;
     if ct != ID_ENVELOPED_DATA {
         return Err(Error::ContentType(ct));
     }
-    let mut contents = content_info
-        .get_elem(Some(0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC))? // explicit tag 0
-        .contents()
-        .get_elem(Some(ale::ASN1_SEQUENCE))?
-        .contents();
-
+    let wrap = content_info
+        .get_elem(
+            &mut stream,
+            Some(0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC),
+        )
+        .expect_some()?;
     // EnvelopedData
-    let ver = contents
-        .get_elem(Some(ale::ASN1_INTEGER))?
-        .contents()
-        .get_u8()?;
+    let contents = wrap
+        .get_elem(&mut stream, Some(ale::ASN1_SEQUENCE))
+        .expect_some()?;
+    let ver = contents.get_tagged::<u8>(&mut stream).expect_some()?;
     if ver != ENVELOPED_DATA_VERSION {
         return Err(Error::Version(ver));
     }
 
     // skip OriginatorInfo
-    contents.get_optional_elem(0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC)?; // implicit tag 0
+    if let Some(oi) = contents.get_optional(
+        &mut stream,
+        0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC,
+    )? {
+        oi.consume(&mut stream)?;
+    }
 
     // RecipientInfos
-    let mut recipient_info = contents
-        .get_elem(Some(ale::ASN1_SET))?
-        .contents()
-        .get_elem(Some(ale::ASN1_SEQUENCE))?
-        .contents();
-    let ver = recipient_info
-        .get_elem(Some(ale::ASN1_INTEGER))?
-        .contents()
-        .get_u8()?;
+    let ri = contents
+        .get_elem(&mut stream, Some(ale::ASN1_SET))
+        .expect_some()?;
+
+    // RecipientInfos
+    let recipient_info = ri
+        .get_elem(&mut stream, Some(ale::ASN1_SEQUENCE))
+        .expect_some()?;
+
+    let ver = recipient_info.get_tagged::<u8>(&mut stream).expect_some()?;
     if ver != ENVELOPED_DATA_RECIPIENT_VERSION {
         return Err(Error::Version(ver));
     }
 
     // skip RecipientIdentifier
-    let _ = recipient_info.get_elem(None);
+    recipient_info
+        .get_elem(&mut stream, None)
+        .expect_some()?
+        .consume(&mut stream)?;
 
     // KeyEncryptionAlgorithmIdentifier
-    let algo = recipient_info
-        .get_elem(Some(ale::ASN1_SEQUENCE))?
-        .contents()
-        .get::<ObjectIdentifier>()?;
+    let ai = recipient_info
+        .get_elem(&mut stream, Some(ale::ASN1_SEQUENCE))
+        .expect_some()?;
+    let algo = ai
+        .get_tagged::<ObjectIdentifier>(&mut stream)
+        .expect_some()?;
     if algo != ID_RSAES_OAEP {
         return Err(Error::Algorithm(algo));
     }
-    let encrypted_key = recipient_info.get_elem(Some(ale::ASN1_OCTETSTRING))?.value;
+    ai.consume(&mut stream)?;
+
+    let encrypted_key = recipient_info
+        .get_elem(&mut stream, Some(ale::ASN1_OCTETSTRING))
+        .expect_some()?
+        .get_bytes(&mut stream)?;
+
+    recipient_info.consume(&mut stream)?;
+    ri.consume(&mut stream)?;
 
     // EncryptedContentInfo
-    let mut encrypted_content_info = contents.get_elem(Some(ale::ASN1_SEQUENCE))?.contents();
-    let ct = encrypted_content_info.get::<ObjectIdentifier>()?;
+    let encrypted_content_info = contents
+        .get_elem(&mut stream, Some(ale::ASN1_SEQUENCE))
+        .expect_some()?;
+    let ct = encrypted_content_info
+        .get_tagged::<ObjectIdentifier>(&mut stream)
+        .expect_some()?;
     if ct != ID_DATA {
         return Err(Error::ContentType(ct));
     }
-    let mut algo_id = encrypted_content_info
-        .get_elem(Some(ale::ASN1_SEQUENCE))?
-        .contents();
-    let algo = algo_id.get::<ObjectIdentifier>()?;
+
+    let ai = encrypted_content_info
+        .get_elem(&mut stream, Some(ale::ASN1_SEQUENCE))
+        .expect_some()?;
+    let algo = ai
+        .get_tagged::<ObjectIdentifier>(&mut stream)
+        .expect_some()?;
     if algo != ID_AES_256_CBC {
         return Err(Error::Algorithm(algo));
     }
-    let iv = algo_id.get_elem(Some(ale::ASN1_OCTETSTRING))?.value;
+    let iv = ai
+        .get_elem(&mut stream, Some(ale::ASN1_OCTETSTRING))
+        .expect_some()?
+        .get_bytes(&mut stream)?;
+    ai.consume(&mut stream)?;
 
     // EncryptedContent
-    let encrypted_content = encrypted_content_info.get_elem(None)?;
+    let encrypted_content = encrypted_content_info
+        .get_elem(&mut stream, None)
+        .expect_some()?;
     let cipher_text = if encrypted_content.tag == 0 | ale::ASN1_CONTEXT_SPECIFIC {
-        Vec::from(encrypted_content.value)
+        Vec::from(encrypted_content.get_bytes(&mut stream)?)
     } else if encrypted_content.tag & ale::ASN1_CONSTRUCTED != 0 {
-        let mut data: Vec<u8> = Vec::with_capacity(encrypted_content.value.len());
-        let mut stream = encrypted_content.contents();
-
-        while !stream.is_eoc() {
-            let chunk = stream.get_elem(Some(ale::ASN1_OCTETSTRING))?.value;
-            data.extend_from_slice(chunk);
+        let mut data: Vec<u8> = Vec::with_capacity(stream.len());
+        while let Some(chunk) =
+            encrypted_content.get_elem(&mut stream, Some(ale::ASN1_OCTETSTRING))?
+        {
+            data.extend_from_slice(chunk.get_bytes(&mut stream)?);
         }
         data
     } else {
         return Err(Error::Ber(ale::Error::Tag(encrypted_content.tag)));
     };
+
+    encrypted_content_info.consume(&mut stream)?;
+    contents.consume(&mut stream)?;
+    wrap.consume(&mut stream)?;
+    content_info.consume(&mut stream)?;
 
     Ok(ParsedEnvelopedData {
         cipher_key: encrypted_key.into(),

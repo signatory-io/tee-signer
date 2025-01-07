@@ -1,5 +1,8 @@
 pub use const_oid::{self as oid, ObjectIdentifier};
 
+mod convert;
+pub use convert::{Tagged, TryFromBytes};
+
 pub const ASN1_TAG_SHIFT: usize = 24;
 pub const ASN1_TAG_NUMBER_MASK: u32 = (1_u32 << (5 + ASN1_TAG_SHIFT)) - 1;
 
@@ -35,23 +38,12 @@ pub const ASN1_UNIVERSALSTRING: u32 = 0x1c;
 pub const ASN1_BMPSTRING: u32 = 0x1e;
 
 #[derive(Debug)]
-pub struct Elem<'a> {
-    pub tag: u32,
-    pub value: &'a [u8],
-}
-
-impl<'a> Elem<'a> {
-    pub fn contents(&self) -> Bytes<'a> {
-        Bytes::new(self.value)
-    }
-}
-
-#[derive(Debug)]
-pub struct Bytes<'a> {
+pub struct Stream<'a> {
     inner: &'a [u8],
 }
 
-impl<'a> Bytes<'a> {
+impl<'a> Stream<'a> {
+    #[inline]
     pub fn new(src: &'a [u8]) -> Self {
         Self { inner: src }
     }
@@ -62,9 +54,9 @@ impl<'a> Bytes<'a> {
     }
 
     #[inline]
-    pub fn get_bytes(&mut self, len: usize) -> Result<&'a [u8], Error> {
+    fn get_bytes(&mut self, len: usize) -> Result<&'a [u8], Error> {
         if self.inner.len() < len {
-            Err(Error::EOF)
+            Err(Error::EOS)
         } else {
             let (out, rest) = (&self.inner[..len], &self.inner[len..]);
             self.inner = rest;
@@ -73,9 +65,9 @@ impl<'a> Bytes<'a> {
     }
 
     #[inline]
-    pub fn get_u8(&mut self) -> Result<u8, Error> {
+    fn get_u8(&mut self) -> Result<u8, Error> {
         if self.inner.len() < 1 {
-            Err(Error::EOF)
+            Err(Error::EOS)
         } else {
             let v = self.inner[0];
             self.inner = &self.inner[1..];
@@ -83,7 +75,7 @@ impl<'a> Bytes<'a> {
         }
     }
 
-    pub fn get_base128(&mut self) -> Result<u64, Error> {
+    fn get_base128(&mut self) -> Result<u64, Error> {
         let mut v = 0_u64;
         loop {
             let b = self.get_u8()? as u64;
@@ -104,7 +96,17 @@ impl<'a> Bytes<'a> {
         Ok(v)
     }
 
-    pub fn get_tag(&mut self) -> Result<u32, Error> {
+    #[inline]
+    fn get_eoc(&mut self) -> bool {
+        if self.inner.len() >= 2 && self.inner[0] == 0 && self.inner[1] == 0 {
+            self.inner = &self.inner[2..];
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_tag(&mut self) -> Result<u32, Error> {
         let tag_byte = self.get_u8()? as u32;
 
         let mut tag = (tag_byte & 0xe0) << ASN1_TAG_SHIFT;
@@ -113,7 +115,7 @@ impl<'a> Bytes<'a> {
         if tag_number == 0x1f {
             let v = self.get_base128()?;
             if v > ASN1_TAG_NUMBER_MASK as u64 || v < 0x1f {
-                return Err(Error::Encoding);
+                return Err(Error::Overflow);
             }
             tag_number = v as u32;
         }
@@ -125,120 +127,50 @@ impl<'a> Bytes<'a> {
         }
     }
 
-    /// Returns None if tag doesn't match
-    pub fn peek_tag(&self, expect_tag: Option<u32>) -> Result<Option<u32>, Error> {
-        let mut bytes = Bytes::new(self.inner);
-        let tag = bytes.get_tag()?;
-        match expect_tag {
-            Some(val) => {
-                if tag == val {
-                    Ok(Some(tag))
-                } else {
-                    Ok(None)
-                }
-            }
-            None => Ok(Some(tag)),
-        }
+    #[inline]
+    fn peek_tag(&self) -> Result<u32, Error> {
+        Stream::new(self.inner).get_tag()
     }
 
-    #[inline]
-    pub fn get_optional_elem(&mut self, expect_tag: u32) -> Result<Option<Elem<'a>>, Error> {
-        match self.peek_tag(Some(expect_tag))? {
-            Some(_) => Ok(Some(self.get_elem(Some(expect_tag))?)),
-            None => Ok(None),
-        }
-    }
-
-    #[inline]
-    pub fn get_unsigned(&mut self, len: usize) -> Result<u64, Error> {
+    fn get_unsigned(&mut self, len: usize) -> Result<u64, Error> {
         let data = self.get_bytes(len)?;
         let mut result = 0_u64;
         for x in data {
+            if result & !(u64::MAX >> 8) != 0 {
+                return Err(Error::Overflow);
+            }
             result <<= 8;
             result |= *x as u64;
         }
         Ok(result)
     }
 
-    pub fn get_elem(&mut self, expect_tag: Option<u32>) -> Result<Elem<'a>, Error> {
-        let tag = self.get_tag()?;
-        if let Some(expect) = expect_tag {
-            if tag != expect {
-                return Err(Error::Tag(tag));
-            }
-        }
-
-        let length_byte = self.get_u8()?;
-
-        let len = if length_byte & 0x80 == 0 {
-            // Short form length.
-            length_byte as usize
+    #[inline]
+    fn advance(&mut self, n: usize) -> Result<(), Error> {
+        if self.inner.len() < n {
+            Err(Error::EOS)
         } else {
-            // The high bit indicate that this is the long form, while the next 7 bits
-            // encode the number of subsequent octets used to encode the length (ITU-T
-            // X.690 clause 8.1.3.5.b).
-            let num_bytes = length_byte as usize & 0x7f;
-            if tag & ASN1_CONSTRUCTED != 0 && num_bytes == 0 {
-                self.len()
-            } else {
-                // ITU-T X.690 clause 8.1.3.5.c specifies that the value 0xff shall not be
-                // used as the first byte of the length. If this parser encounters that
-                // value, num_bytes will be parsed as 127, which will fail this check.
-                if num_bytes == 0 || num_bytes > 4 {
-                    return Err(Error::Encoding);
-                }
-                self.get_unsigned(num_bytes)? as usize
-            }
-        };
-
-        Ok(Elem {
-            tag,
-            value: self.get_bytes(len)?,
-        })
+            self.inner = &self.inner[n..];
+            Ok(())
+        }
     }
+}
 
+pub fn new_document(stream: &mut Stream, expect: Option<u32>) -> Result<Option<Elem>, Error> {
+    Elem::new(stream).get_elem(stream, expect)
+}
+
+pub trait ExpectSome<T, E> {
+    fn expect_some(self) -> Result<T, E>;
+}
+
+impl<T> ExpectSome<T, Error> for Result<Option<T>, Error> {
     #[inline]
-    pub fn is_eoc(&self) -> bool {
-        self.inner.len() >= 2 && self.inner[0] == 0 && self.inner[1] == 0
-    }
-
-    #[inline]
-    pub fn get<T: TryFromBER<'a>>(&mut self) -> Result<T, T::Error> {
-        T::try_from_ber(self)
-    }
-}
-
-impl<'a> From<Elem<'a>> for Bytes<'a> {
-    #[inline]
-    fn from(elem: Elem<'a>) -> Self {
-        elem.contents()
-    }
-}
-
-pub trait TryFromBER<'a>: Sized {
-    type Error;
-    fn try_from_ber(src: &mut Bytes<'a>) -> Result<Self, Self::Error>;
-    fn try_from_ber_bytes(src: &'a [u8]) -> Result<Self, Self::Error> {
-        let mut bytes = Bytes::new(src);
-        Self::try_from_ber(&mut bytes)
-    }
-}
-
-impl<'a> TryFromBER<'a> for Elem<'a> {
-    type Error = Error;
-    fn try_from_ber(src: &mut Bytes<'a>) -> Result<Self, Self::Error> {
-        src.get_elem(None)
-    }
-}
-
-impl<'a> TryFromBER<'a> for ObjectIdentifier {
-    type Error = Error;
-
-    fn try_from_ber(src: &mut Bytes<'a>) -> Result<Self, Self::Error> {
-        match src.get_elem(Some(ASN1_OBJECT)) {
-            Ok(el) => match ObjectIdentifier::from_bytes(el.value) {
-                Ok(v) => Ok(v),
-                Err(err) => Err(Error::OID(err)),
+    fn expect_some(self) -> Result<T, Error> {
+        match self {
+            Ok(opt) => match opt {
+                Some(val) => Ok(val),
+                None => Err(Error::EOS),
             },
             Err(err) => Err(err),
         }
@@ -246,22 +178,169 @@ impl<'a> TryFromBER<'a> for ObjectIdentifier {
 }
 
 #[derive(Debug)]
+pub struct Elem {
+    pub tag: u32,
+    len: Option<usize>,
+    start: usize,
+}
+
+impl Elem {
+    fn new(stream: &Stream) -> Self {
+        Elem {
+            tag: 0,
+            len: Some(stream.len()),
+            start: stream.len(),
+        }
+    }
+
+    pub fn get_bytes<'a>(&self, stream: &mut Stream<'a>) -> Result<&'a [u8], Error> {
+        match self.len {
+            Some(len) => stream.get_bytes(len),
+            None => Err(Error::Infinite),
+        }
+    }
+
+    #[inline]
+    pub fn consumed(&self, stream: &Stream) -> usize {
+        self.start - stream.len()
+    }
+
+    #[inline]
+    pub fn available(&self, stream: &Stream) -> Option<usize> {
+        match self.len {
+            Some(len) => Some(len - self.consumed(stream)),
+            None => None,
+        }
+    }
+
+    pub fn get_elem(
+        &self,
+        stream: &mut Stream,
+        expect: Option<u32>,
+    ) -> Result<Option<Elem>, Error> {
+        if let Some(available) = self.available(stream) {
+            if available == 0 {
+                return Ok(None);
+            }
+        } else if stream.get_eoc() {
+            return Ok(None);
+        }
+
+        let tag = stream.get_tag()?;
+        if let Some(ex) = expect {
+            if tag != ex {
+                return Err(Error::Tag(tag));
+            }
+        }
+
+        let length_byte = stream.get_u8()?;
+        let len = if length_byte & 0x80 == 0 {
+            // Short form length.
+            Some(length_byte as usize)
+        } else {
+            // The high bit indicate that this is the long form, while the next 7 bits
+            // encode the number of subsequent octets used to encode the length (ITU-T
+            // X.690 clause 8.1.3.5.b).
+            let num_bytes = length_byte as usize & 0x7f;
+            if tag & ASN1_CONSTRUCTED != 0 && num_bytes == 0 {
+                None
+            } else {
+                // ITU-T X.690 clause 8.1.3.5.c specifies that the value 0xff shall not be
+                // used as the first byte of the length. If this parser encounters that
+                // value, num_bytes will be parsed as 127, which will fail this check.
+                if num_bytes == 0 || num_bytes > 4 {
+                    return Err(Error::Encoding);
+                }
+                Some(stream.get_unsigned(num_bytes)? as usize)
+            }
+        };
+
+        Ok(Some(Elem {
+            tag,
+            len,
+            start: stream.len(),
+        }))
+    }
+
+    pub fn get_optional(&self, stream: &mut Stream, expect: u32) -> Result<Option<Elem>, Error> {
+        if let Some(available) = self.available(stream) {
+            if available == 0 {
+                return Ok(None);
+            }
+        } else if stream.get_eoc() {
+            return Ok(None);
+        }
+
+        if stream.peek_tag()? == expect {
+            self.get_elem(stream, None)
+        } else {
+            return Ok(None);
+        }
+    }
+
+    pub fn get_tagged<'a, T>(&self, stream: &mut Stream<'a>) -> Result<Option<T>, Error>
+    where
+        T: Tagged,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.get(stream, Some(T::TAG))
+    }
+
+    pub fn get<'a, T>(&self, stream: &mut Stream<'a>, tag: Option<u32>) -> Result<Option<T>, Error>
+    where
+        T: TryFromBytes,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        match self.get_elem(stream, tag)? {
+            Some(el) => {
+                let b = el.get_bytes(stream)?;
+                match T::try_from_bytes(b) {
+                    Ok(value) => Ok(Some(value)),
+                    Err(err) => Err(Error::Convert(Box::new(err))),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn consume<'a>(&self, stream: &mut Stream<'a>) -> Result<(), Error> {
+        match self.available(stream) {
+            Some(val) => stream.advance(val),
+            None => {
+                while let Some(el) = self.get_elem(stream, None)? {
+                    el.consume(stream)?
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum Error {
-    EOF,
+    EOS,
     ValueTooLarge,
     Encoding,
     Tag(u32),
+    Length(usize),
     OID(oid::Error),
+    Infinite,
+    Convert(Box<dyn std::error::Error + Send + Sync>),
+    Overflow,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::EOF => f.write_str("EOF"),
+            Error::EOS => f.write_str("unexpected end of stream"),
             Error::ValueTooLarge => f.write_str("value is too large"),
             Error::Encoding => f.write_str("invalid error"),
-            Error::Tag(tag) => write!(f, "unexpected tag: {}", tag),
+            Error::Tag(tag) => write!(f, "unexpected tag: {:x}", tag),
             Error::OID(error) => write!(f, "OID decoding error: {}", error),
+            Error::Infinite => f.write_str("infinite length"),
+            Error::Convert(err) => write!(f, "convert error: {}", err),
+            Error::Length(len) => write!(f, "invalid length: {}", len),
+            Error::Overflow => f.write_str("overflow"),
         }
     }
 }
