@@ -5,7 +5,7 @@ pub mod client;
 pub mod server;
 
 #[derive(Debug, Serialize, Deserialize)]
-enum Request<C> {
+pub enum Request<C> {
     Initialize(C),
     Import(Vec<u8>),
     Generate(KeyType),

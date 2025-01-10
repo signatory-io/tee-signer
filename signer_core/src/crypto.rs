@@ -28,7 +28,7 @@ pub enum KeyType {
     Bls,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Signature {
     Secp256k1(::ecdsa::Signature<Secp256k1>),
     NistP256(::ecdsa::Signature<NistP256>),

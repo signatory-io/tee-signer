@@ -26,7 +26,7 @@ use zeroize::Zeroize;
 pub struct Credentials {
     pub access_key_id: String,
     pub secret_access_key: String,
-    pub session_token: String,
+    pub session_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,7 +66,7 @@ impl SealantFactory for ClientFactory {
         let cred = AWSCredentials::new(
             &credentials.access_key_id,
             &credentials.secret_access_key,
-            None,
+            credentials.session_token,
             None,
             "RPC",
         );
