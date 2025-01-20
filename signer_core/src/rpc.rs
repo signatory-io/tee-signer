@@ -14,7 +14,7 @@ pub enum Request<C> {
     SignWith { key_data: Vec<u8>, msg: Vec<u8> },
     PublicKey(usize),
     PublicKeyFrom(Vec<u8>),
-    Terminate,
+    Terminate(()),
 }
 
 /// Wire-compatible error object

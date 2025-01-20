@@ -113,7 +113,7 @@ where
     }
 
     pub fn terminate(&mut self) -> Result<(), Error> {
-        self.round_trip::<()>(Request::Terminate)
+        self.round_trip::<()>(Request::Terminate(()))
     }
 
     pub fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {
@@ -198,7 +198,7 @@ where
     }
 
     pub async fn terminate(&mut self) -> Result<(), Error> {
-        self.round_trip::<()>(Request::Terminate).await
+        self.round_trip::<()>(Request::Terminate(())).await
     }
 
     pub async fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {

@@ -127,7 +127,9 @@ where
         };
 
         match (req, &mut self.signer) {
-            (Request::Terminate, _) => RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false)),
+            (Request::Terminate(_), _) => {
+                RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false))
+            }
 
             (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
                 Ok(sealant) => {
@@ -246,7 +248,9 @@ where
         };
 
         match (req, &mut self.signer) {
-            (Request::Terminate, _) => RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false)),
+            (Request::Terminate(_), _) => {
+                RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false))
+            }
 
             (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
                 Ok(sealant) => {
