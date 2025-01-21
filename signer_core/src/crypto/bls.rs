@@ -7,7 +7,7 @@ pub use blst::BLST_ERROR;
 
 const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Signature(min_pk::Signature);
 
 impl core::ops::Deref for Signature {
