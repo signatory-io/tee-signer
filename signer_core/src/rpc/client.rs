@@ -112,10 +112,6 @@ where
         self.round_trip::<()>(Request::Initialize(cred))
     }
 
-    pub fn terminate(&mut self) -> Result<(), Error> {
-        self.round_trip::<()>(Request::Terminate(()))
-    }
-
     pub fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {
         self.round_trip::<(PublicKey, usize)>(Request::Import(key_data.into()))
     }
@@ -195,10 +191,6 @@ where
 
     pub async fn initialize(&mut self, cred: C) -> Result<(), Error> {
         self.round_trip::<()>(Request::Initialize(cred)).await
-    }
-
-    pub async fn terminate(&mut self) -> Result<(), Error> {
-        self.round_trip::<()>(Request::Terminate(())).await
     }
 
     pub async fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {

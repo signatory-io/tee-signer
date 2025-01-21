@@ -93,7 +93,14 @@ where
         let mut w_buf = Vec::<u8>::new();
         loop {
             let mut len_buf: [u8; 4] = [0; 4];
-            sock.read_exact(&mut len_buf)?;
+            if let Err(err) = sock.read_exact(&mut len_buf) {
+                break if err.kind() == io::ErrorKind::UnexpectedEof {
+                    Ok(())
+                } else {
+                    Err(err.into())
+                };
+            }
+
             let len = u32::from_be_bytes(len_buf);
 
             buf.resize(len as usize, 0);
@@ -127,10 +134,6 @@ where
         };
 
         match (req, &mut self.signer) {
-            (Request::Terminate(_), _) => {
-                RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false))
-            }
-
             (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
                 Ok(sealant) => {
                     self.signer = Some(sealant.into());
@@ -214,7 +217,14 @@ where
         let mut w_buf = Vec::<u8>::new();
         loop {
             let mut len_buf: [u8; 4] = [0; 4];
-            sock.read_exact(&mut len_buf).await?;
+            if let Err(err) = sock.read_exact(&mut len_buf).await {
+                break if err.kind() == io::ErrorKind::UnexpectedEof {
+                    Ok(())
+                } else {
+                    Err(err.into())
+                };
+            }
+
             let len = u32::from_be_bytes(len_buf);
 
             buf.resize(len as usize, 0);
@@ -248,10 +258,6 @@ where
         };
 
         match (req, &mut self.signer) {
-            (Request::Terminate(_), _) => {
-                RPCResult::<()>::Ok(()).try_into_writer(buf).and(Ok(false))
-            }
-
             (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
                 Ok(sealant) => {
                     self.signer = Some(sealant.into());

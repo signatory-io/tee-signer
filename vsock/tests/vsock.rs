@@ -1,4 +1,4 @@
-//#[cfg(target_os = "linux")]
+#[cfg(target_os = "linux")]
 mod linux {
     use std::thread;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

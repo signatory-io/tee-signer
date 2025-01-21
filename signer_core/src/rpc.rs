@@ -14,7 +14,6 @@ pub enum Request<C> {
     SignWith { key_data: Vec<u8>, msg: Vec<u8> },
     PublicKey(usize),
     PublicKeyFrom(Vec<u8>),
-    Terminate(()),
 }
 
 /// Wire-compatible error object
@@ -73,22 +72,22 @@ mod tests {
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+            {
+                let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-            client.initialize(DummyCredentials).unwrap();
-            let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).unwrap();
+                client.initialize(DummyCredentials).unwrap();
+                let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).unwrap();
 
-            let data = b"text";
-            let sig = unwrap_as!(
-                client.try_sign_with(&sealed_pk, data).unwrap(),
-                Signature::Secp256k1
-            );
-            let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
-            let mut digest = Blake2b256::new();
-            digest.update(data);
-            pub_key.verify_digest(digest, &sig).unwrap();
-
-            client.terminate().unwrap();
+                let data = b"text";
+                let sig = unwrap_as!(
+                    client.try_sign_with(&sealed_pk, data).unwrap(),
+                    Signature::Secp256k1
+                );
+                let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
+                let mut digest = Blake2b256::new();
+                digest.update(data);
+                pub_key.verify_digest(digest, &sig).unwrap();
+            }
             jh.join().unwrap();
         }
 
@@ -102,21 +101,21 @@ mod tests {
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+            {
+                let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-            client.initialize(DummyCredentials).unwrap();
-            let (sealed_pk, pub_key) = client.generate(KeyType::Ed25519).unwrap();
+                client.initialize(DummyCredentials).unwrap();
+                let (sealed_pk, pub_key) = client.generate(KeyType::Ed25519).unwrap();
 
-            let data = b"text";
-            let sig = unwrap_as!(
-                client.try_sign_with(&sealed_pk, data).unwrap(),
-                Signature::Ed25519
-            );
-            let pub_key = unwrap_as!(pub_key, PublicKey::Ed25519);
-            let digest = Blake2b256::digest(data);
-            pub_key.verify(&digest, &sig).unwrap();
-
-            client.terminate().unwrap();
+                let data = b"text";
+                let sig = unwrap_as!(
+                    client.try_sign_with(&sealed_pk, data).unwrap(),
+                    Signature::Ed25519
+                );
+                let pub_key = unwrap_as!(pub_key, PublicKey::Ed25519);
+                let digest = Blake2b256::digest(data);
+                pub_key.verify(&digest, &sig).unwrap();
+            }
             jh.join().unwrap();
         }
 
@@ -130,20 +129,20 @@ mod tests {
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+            {
+                let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-            client.initialize(DummyCredentials).unwrap();
-            let (sealed_pk, pub_key) = client.generate(KeyType::Bls).unwrap();
+                client.initialize(DummyCredentials).unwrap();
+                let (sealed_pk, pub_key) = client.generate(KeyType::Bls).unwrap();
 
-            let data = b"text";
-            let sig = unwrap_as!(
-                client.try_sign_with(&sealed_pk, data).unwrap(),
-                Signature::Bls
-            );
-            let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
-            pub_key.verify(data, &sig).unwrap();
-
-            client.terminate().unwrap();
+                let data = b"text";
+                let sig = unwrap_as!(
+                    client.try_sign_with(&sealed_pk, data).unwrap(),
+                    Signature::Bls
+                );
+                let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
+                pub_key.verify(data, &sig).unwrap();
+            }
             jh.join().unwrap();
         }
 
@@ -157,19 +156,19 @@ mod tests {
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+            {
+                let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-            client.initialize(DummyCredentials).unwrap();
-            let (_, pub_key, handle) = client.generate_and_import(KeyType::Secp256k1).unwrap();
+                client.initialize(DummyCredentials).unwrap();
+                let (_, pub_key, handle) = client.generate_and_import(KeyType::Secp256k1).unwrap();
 
-            let data = b"text";
-            let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Secp256k1);
-            let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
-            let mut digest = Blake2b256::new();
-            digest.update(data);
-            pub_key.verify_digest(digest, &sig).unwrap();
-
-            client.terminate().unwrap();
+                let data = b"text";
+                let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Secp256k1);
+                let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
+                let mut digest = Blake2b256::new();
+                digest.update(data);
+                pub_key.verify_digest(digest, &sig).unwrap();
+            }
             jh.join().unwrap();
         }
 
@@ -183,18 +182,18 @@ mod tests {
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+            {
+                let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-            client.initialize(DummyCredentials).unwrap();
-            let (_, pub_key, handle) = client.generate_and_import(KeyType::Ed25519).unwrap();
+                client.initialize(DummyCredentials).unwrap();
+                let (_, pub_key, handle) = client.generate_and_import(KeyType::Ed25519).unwrap();
 
-            let data = b"text";
-            let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Ed25519);
-            let pub_key = unwrap_as!(pub_key, PublicKey::Ed25519);
-            let digest = Blake2b256::digest(data);
-            pub_key.verify(&digest, &sig).unwrap();
-
-            client.terminate().unwrap();
+                let data = b"text";
+                let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Ed25519);
+                let pub_key = unwrap_as!(pub_key, PublicKey::Ed25519);
+                let digest = Blake2b256::digest(data);
+                pub_key.verify(&digest, &sig).unwrap();
+            }
             jh.join().unwrap();
         }
 
@@ -208,17 +207,17 @@ mod tests {
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+            {
+                let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-            client.initialize(DummyCredentials).unwrap();
-            let (_, pub_key, handle) = client.generate_and_import(KeyType::Bls).unwrap();
+                client.initialize(DummyCredentials).unwrap();
+                let (_, pub_key, handle) = client.generate_and_import(KeyType::Bls).unwrap();
 
-            let data = b"text";
-            let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Bls);
-            let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
-            pub_key.verify(data, &sig).unwrap();
-
-            client.terminate().unwrap();
+                let data = b"text";
+                let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Bls);
+                let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
+                pub_key.verify(data, &sig).unwrap();
+            }
             jh.join().unwrap();
         }
 
@@ -232,17 +231,18 @@ mod tests {
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
 
-            let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+            {
+                let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-            let err = client.generate(KeyType::Secp256k1).unwrap_err();
-            assert_eq!(
-                unwrap_as!(err, ClientError::RPC),
-                Error {
-                    message: "uninitialized".into(),
-                    source: None
-                }
-            );
-            client.terminate().unwrap();
+                let err = client.generate(KeyType::Secp256k1).unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, ClientError::RPC),
+                    Error {
+                        message: "uninitialized".into(),
+                        source: None
+                    }
+                );
+            }
             jh.join().unwrap();
         }
     }
@@ -273,10 +273,10 @@ mod tests {
                 AsyncClient::new(client_sock);
 
             futures::join!(
-                async {
+                async move {
                     server.serve_connection(srv_sock).await.unwrap();
                 },
-                async {
+                async move {
                     client.initialize(DummyCredentials).await.unwrap();
                     let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).await.unwrap();
 
@@ -289,8 +289,6 @@ mod tests {
                     let mut digest = Blake2b256::new();
                     digest.update(data);
                     pub_key.verify_digest(digest, &sig).unwrap();
-
-                    client.terminate().await.unwrap();
                 }
             );
         }
@@ -308,10 +306,10 @@ mod tests {
                 AsyncClient::new(client_sock);
 
             futures::join!(
-                async {
+                async move {
                     server.serve_connection(srv_sock).await.unwrap();
                 },
-                async {
+                async move {
                     let err = client.generate(KeyType::Secp256k1).await.unwrap_err();
                     assert_eq!(
                         unwrap_as!(err, ClientError::RPC),
@@ -320,8 +318,6 @@ mod tests {
                             source: None
                         }
                     );
-
-                    client.terminate().await.unwrap();
                 }
             );
         }
