@@ -188,13 +188,15 @@ impl Stream {
 
         match sock.0.get_ref().connect_to_addr(addr) {
             Ok(()) => Ok(sock),
-            Err(err) if is_in_progress(&err) => {
+            Err(err) if is_in_progress(&err) => loop {
                 let _ = sock.0.writable().await?;
-                match sock.0.get_ref().take_error()? {
-                    Some(err) => Err(err),
-                    None => Ok(sock),
+                if let Some(err) = sock.0.get_ref().take_error()? {
+                    break Err(err);
                 }
-            }
+                if let Ok(_) = sock.0.get_ref().peer_addr() {
+                    break Ok(sock);
+                }
+            },
             Err(err) => Err(err),
         }
     }
