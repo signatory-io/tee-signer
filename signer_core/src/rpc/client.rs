@@ -119,8 +119,10 @@ where
     pub fn import_unencrypted(
         &mut self,
         private_key: &PrivateKey,
-    ) -> Result<(PublicKey, usize), Error> {
-        self.round_trip::<(PublicKey, usize)>(Request::ImportUnencrypted(private_key.clone()))
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error> {
+        self.round_trip::<(Vec<u8>, PublicKey, usize)>(Request::ImportUnencrypted(
+            private_key.clone(),
+        ))
     }
 
     pub fn generate(&mut self, t: KeyType) -> Result<(Vec<u8>, PublicKey), Error> {
@@ -203,6 +205,16 @@ where
     pub async fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {
         self.round_trip::<(PublicKey, usize)>(Request::Import(key_data.into()))
             .await
+    }
+
+    pub async fn import_unencrypted(
+        &mut self,
+        private_key: &PrivateKey,
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error> {
+        self.round_trip::<(Vec<u8>, PublicKey, usize)>(Request::ImportUnencrypted(
+            private_key.clone(),
+        ))
+        .await
     }
 
     pub async fn generate(&mut self, t: KeyType) -> Result<(Vec<u8>, PublicKey), Error> {

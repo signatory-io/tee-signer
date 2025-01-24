@@ -293,6 +293,7 @@ where
 
             (Request::ImportUnencrypted(key), Some(signer)) => signer
                 .import_unencrypted(key)
+                .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(true)),

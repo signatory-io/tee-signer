@@ -179,9 +179,10 @@ impl<S: SyncSealant> SealedSigner<S> {
     pub fn import_unencrypted(
         &mut self,
         pk: PrivateKey,
-    ) -> Result<(PublicKey, usize), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error<S::Error>> {
         let p = pk.public_key();
-        Ok((p, self.0.keychain.import(pk)))
+        let sealed = self.seal(&pk)?;
+        Ok((sealed, p, self.0.keychain.import(pk)))
     }
 
     pub fn generate<R: CryptoRngCore>(
@@ -261,12 +262,13 @@ impl<S: AsyncSealant> AsyncSealedSigner<S> {
         Ok((p, self.0.keychain.import(pk)))
     }
 
-    pub fn import_unencrypted(
+    pub async fn import_unencrypted(
         &mut self,
         pk: PrivateKey,
-    ) -> Result<(PublicKey, usize), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error<S::Error>> {
         let p = pk.public_key();
-        Ok((p, self.0.keychain.import(pk)))
+        let sealed = self.seal(&pk).await?;
+        Ok((sealed, p, self.0.keychain.import(pk)))
     }
 
     pub async fn generate<R: CryptoRngCore>(
