@@ -49,7 +49,7 @@ impl KeyPair for ed25519_dalek::SigningKey {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum PrivateKey {
     Secp256k1(ecdsa::SigningKey<::ecdsa::SigningKey<Secp256k1>>),
     NistP256(ecdsa::SigningKey<::ecdsa::SigningKey<NistP256>>),

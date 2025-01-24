@@ -5,7 +5,7 @@ use crate::crypto::{
 };
 use elliptic_curve::FieldBytes;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SigningKey<C>(pub(crate) C);
 
 impl Random for SigningKey<ecdsa::SigningKey<Secp256k1>> {

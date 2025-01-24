@@ -88,7 +88,7 @@ impl<'de> Deserialize<'de> for PublicKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SigningKey(pub(crate) min_pk::SecretKey);
 
 impl core::ops::Deref for SigningKey {

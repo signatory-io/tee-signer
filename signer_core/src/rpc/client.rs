@@ -1,4 +1,4 @@
-use crate::crypto::{KeyType, PublicKey, Signature};
+use crate::crypto::{KeyType, PrivateKey, PublicKey, Signature};
 use crate::rpc::{Error as RPCError, Request, Result as RPCResult};
 use crate::{TryFromCBOR, TryIntoCBOR};
 use serde::Serialize;
@@ -114,6 +114,13 @@ where
 
     pub fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {
         self.round_trip::<(PublicKey, usize)>(Request::Import(key_data.into()))
+    }
+
+    pub fn import_unencrypted(
+        &mut self,
+        private_key: &PrivateKey,
+    ) -> Result<(PublicKey, usize), Error> {
+        self.round_trip::<(PublicKey, usize)>(Request::ImportUnencrypted(private_key.clone()))
     }
 
     pub fn generate(&mut self, t: KeyType) -> Result<(Vec<u8>, PublicKey), Error> {

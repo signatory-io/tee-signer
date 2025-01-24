@@ -1,4 +1,4 @@
-use crate::crypto::KeyType;
+use crate::crypto::{KeyType, PrivateKey};
 use serde::{Deserialize, Serialize};
 
 pub mod client;
@@ -8,6 +8,7 @@ pub mod server;
 pub enum Request<C> {
     Initialize(C),
     Import(Vec<u8>),
+    ImportUnencrypted(PrivateKey),
     Generate(KeyType),
     GenerateAndImport(KeyType),
     Sign { handle: usize, msg: Vec<u8> },

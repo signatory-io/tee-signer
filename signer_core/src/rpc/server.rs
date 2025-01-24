@@ -160,6 +160,12 @@ where
                 .try_into_writer(buf)
                 .and(Ok(true)),
 
+            (Request::ImportUnencrypted(key), Some(signer)) => signer
+                .import_unencrypted(key)
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(true)),
+
             (Request::Generate(t), Some(signer)) => signer
                 .generate(t, &mut self.rng)
                 .map_err(RPCError::from)
@@ -281,6 +287,12 @@ where
             (Request::Import(key_data), Some(signer)) => signer
                 .import(&key_data)
                 .await
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(true)),
+
+            (Request::ImportUnencrypted(key), Some(signer)) => signer
+                .import_unencrypted(key)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(true)),
