@@ -356,7 +356,7 @@ mod tests {
     #[derive(Debug)]
     pub(crate) struct Passthrough;
     #[derive(Serialize, Deserialize, Debug)]
-    pub(crate) struct DummyCredentials;
+    pub(crate) struct DummyCredentials {}
     #[derive(Debug)]
     pub(crate) struct DummyErr;
 

@@ -54,7 +54,7 @@ mod tests {
         use crate::rpc::{
             client::{Client, Error as ClientError},
             server::Server,
-            Error,
+            Error, Request,
         };
         use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
         use crate::{macros::unwrap_as, SealedSigner};
@@ -62,6 +62,15 @@ mod tests {
         use signature::{DigestVerifier, Verifier};
         use std::os::unix::net::UnixStream;
         use std::thread;
+
+        #[test]
+        fn serde() {
+            let req = Request::Initialize(DummyCredentials {});
+            let mut serialized: Vec<u8> = Vec::new();
+            ciborium::into_writer(&req, &mut serialized).unwrap();
+            // a1, 6a, 49, 6e, 69, 74, 69, 61, 6c, 69, 7a, 65, a0
+            let _: Request<DummyCredentials> = ciborium::from_reader(&serialized[..]).unwrap();
+        }
 
         #[test]
         fn rpc_sign_with_secp256k1() {
@@ -76,7 +85,7 @@ mod tests {
             {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-                client.initialize(DummyCredentials).unwrap();
+                client.initialize(DummyCredentials {}).unwrap();
                 let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).unwrap();
 
                 let data = b"text";
@@ -105,7 +114,7 @@ mod tests {
             {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-                client.initialize(DummyCredentials).unwrap();
+                client.initialize(DummyCredentials {}).unwrap();
                 let (sealed_pk, pub_key) = client.generate(KeyType::Ed25519).unwrap();
 
                 let data = b"text";
@@ -133,7 +142,7 @@ mod tests {
             {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-                client.initialize(DummyCredentials).unwrap();
+                client.initialize(DummyCredentials {}).unwrap();
                 let (sealed_pk, pub_key) = client.generate(KeyType::Bls).unwrap();
 
                 let data = b"text";
@@ -160,7 +169,7 @@ mod tests {
             {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-                client.initialize(DummyCredentials).unwrap();
+                client.initialize(DummyCredentials {}).unwrap();
                 let (_, pub_key, handle) = client.generate_and_import(KeyType::Secp256k1).unwrap();
 
                 let data = b"text";
@@ -186,7 +195,7 @@ mod tests {
             {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-                client.initialize(DummyCredentials).unwrap();
+                client.initialize(DummyCredentials {}).unwrap();
                 let (_, pub_key, handle) = client.generate_and_import(KeyType::Ed25519).unwrap();
 
                 let data = b"text";
@@ -211,7 +220,7 @@ mod tests {
             {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
-                client.initialize(DummyCredentials).unwrap();
+                client.initialize(DummyCredentials {}).unwrap();
                 let (_, pub_key, handle) = client.generate_and_import(KeyType::Bls).unwrap();
 
                 let data = b"text";
@@ -278,7 +287,7 @@ mod tests {
                     server.serve_connection(srv_sock).await.unwrap();
                 },
                 async move {
-                    client.initialize(DummyCredentials).await.unwrap();
+                    client.initialize(DummyCredentials {}).await.unwrap();
                     let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).await.unwrap();
 
                     let data = b"text";
