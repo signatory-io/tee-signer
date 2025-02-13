@@ -27,13 +27,13 @@ pub struct Credentials {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub session_token: Option<String>,
+    pub encryption_key_id: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub attestation_doc: Vec<u8>,
     pub algorithm_spec: Option<EncryptionAlgorithmSpec>,
-    pub key_id: Option<String>,
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
     pub region: String,
@@ -88,6 +88,7 @@ impl SealantFactory for ClientFactory {
         let conf = builder.build();
         Ok(Client {
             config: self.config.clone(),
+            encryption_key_id: credentials.encryption_key_id,
             client: KMSClient::new(&conf),
         })
     }
@@ -96,9 +97,8 @@ impl SealantFactory for ClientFactory {
 pub struct Client {
     client: KMSClient,
     config: Config,
+    encryption_key_id: String,
 }
-
-impl Client {}
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -319,7 +319,7 @@ impl AsyncSealant for Client {
             .client
             .encrypt()
             .plaintext(src.into())
-            .set_key_id(self.config.key_id.clone())
+            .set_key_id(Some(self.encryption_key_id.clone()))
             .set_encryption_algorithm(self.config.algorithm_spec.clone())
             .send()
             .await?;
@@ -340,7 +340,6 @@ impl AsyncSealant for Client {
             .client
             .decrypt()
             .ciphertext_blob(src.into())
-            .set_key_id(self.config.key_id.clone())
             .set_encryption_algorithm(self.config.algorithm_spec.clone())
             .recipient(ri)
             .send()

@@ -1504,8 +1504,6 @@ name = "nitro_signer_app"
 version = "0.1.0"
 dependencies = [
  "aws-nitro-enclaves-nsm-api",
- "clap",
- "clap_derive",
  "libc",
  "nitro_signer",
  "vsock",

@@ -48,13 +48,14 @@ impl std::fmt::Display for Error {
     }
 }
 
+impl std::error::Error for Error {}
+
 const RSA_BITS: usize = 2048;
 pub const DEFAULT_VSOCK_PORT: u32 = 2000;
 
 #[derive(Debug)]
 pub struct Config {
     pub algorithm_spec: Option<EncryptionAlgorithmSpec>,
-    pub key_id: Option<String>,
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
     pub region: String,
@@ -84,7 +85,6 @@ impl App {
         let client_conf = kms_client::Config {
             attestation_doc: self.attestation_doc,
             algorithm_spec: self.conf.algorithm_spec,
-            key_id: self.conf.key_id,
             proxy_port: self.conf.proxy_port,
             proxy_cid: self.conf.proxy_cid,
             region: self.conf.region,

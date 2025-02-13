@@ -8,5 +8,3 @@ nitro_signer = { path = "../nitro_signer" }
 vsock = { path = "../vsock" }
 aws-nitro-enclaves-nsm-api = "0.4"
 libc = "0.2"
-clap = { version = "4.5", features = ["derive"] }
-clap_derive = "4.5"

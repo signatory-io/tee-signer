@@ -14,16 +14,14 @@ COPY . /enclave-signer
 RUN source $HOME/.cargo/env && cd enclave-signer && cargo build --release --bin nitro_signer_app
 RUN cp /enclave-signer/target/release/nitro_signer_app /nitro_signer_app
 
-ENV REGION=""
-ENV KEY_ID=""
+ARG REGION
+ARG PROXY_PORT
+ARG PROXY_CID
+ARG LISTEN_PORT
 
-ARG PROXY_PORT=8000
-ARG PROXY_CID=3
-ARG LISTEN_PORT=2000
+ENV REGION=${REGION}
+ENV PROXY_PORT=${PROXY_PORT}
+ENV PROXY_CID=${PROXY_CID}
+ENV LISTEN_PORT=${LISTEN_PORT}
 
-CMD ["/nitro_signer_app", \
-    "--region", ${REGION}, \
-    "--key-id", ${KEY_ID}, \
-    "--proxy-port", ${PROXY_PORT}, \
-    "--proxy-cid", ${PROXY_CID}, \
-    "--listen-port", ${LISTEN_PORT}]
+CMD ["/nitro_signer_app"]

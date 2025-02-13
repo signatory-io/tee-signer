@@ -1,49 +1,28 @@
 pub mod app;
 pub mod nsm;
 
-use clap::Parser;
-use nitro_signer::{
-    kms_client::{self, EncryptionAlgorithmSpec},
-    tokio,
-};
-
-#[derive(Parser)]
-struct Cli {
-    #[arg(long)]
-    algorithm_spec: Option<EncryptionAlgorithmSpec>,
-
-    #[arg(long)]
-    key_id: Option<String>,
-
-    #[arg(long, default_value_t = kms_client::DEFAULT_VSOCK_PROXY_PORT)]
-    proxy_port: u32,
-
-    #[arg(long, default_value_t = kms_client::DEFAULT_VSOCK_PROXY_CID)]
-    proxy_cid: u32,
-
-    #[arg(long)]
-    region: String,
-
-    #[arg(long)]
-    endpoint: Option<String>,
-
-    #[arg(long, default_value_t = app::DEFAULT_VSOCK_PORT)]
-    listen_port: u32,
-}
+use nitro_signer::tokio;
+use std::env;
 
 #[tokio::main]
-async fn main() -> Result<(), app::Error> {
-    let cli = Cli::parse();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let region = env::var("REGION")?;
+
     let conf = app::Config {
-        algorithm_spec: cli.algorithm_spec,
-        key_id: cli.key_id,
-        proxy_port: Some(cli.proxy_port),
-        proxy_cid: Some(cli.proxy_cid),
-        region: cli.region,
-        endpoint: cli.endpoint,
-        listen_port: Some(cli.listen_port),
+        algorithm_spec: env::var("ALGORITHM_SPEC").ok().map(|s| s.as_str().into()),
+        proxy_port: env::var("PROXY_PORT")
+            .ok()
+            .map(|s| s.parse().ok())
+            .flatten(),
+        proxy_cid: env::var("PROXY_CID").ok().map(|s| s.parse().ok()).flatten(),
+        region,
+        endpoint: env::var("ENDPOINT").ok(),
+        listen_port: env::var("LISTEN_PORT")
+            .ok()
+            .map(|s| s.parse().ok())
+            .flatten(),
     };
 
     let app = app::App::init(conf)?;
-    app.run().await
+    app.run().await.map_err(Into::into)
 }
