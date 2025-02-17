@@ -99,7 +99,8 @@ impl App {
 
         let listener = vsock::asio::Listener::bind(&listen_addr)?;
         loop {
-            let (conn, _) = listener.accept().await?;
+            let (conn, addr) = listener.accept().await?;
+            println!("incoming connection from {}", addr);
 
             let ccfg = client_conf.clone();
             let rng = nsm::SharedRng::new(self.secm.clone());
