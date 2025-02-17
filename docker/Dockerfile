@@ -1,6 +1,6 @@
 ARG BASE_IMAGE=public.ecr.aws/amazonlinux/amazonlinux:2
 
-FROM $BASE_IMAGE
+FROM $BASE_IMAGE AS builder
 
 RUN yum install -y \
     gcc \
@@ -12,7 +12,26 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 
 COPY . /enclave-signer
 RUN source $HOME/.cargo/env && cd enclave-signer && cargo build --release --bin nitro_signer_app
-RUN cp /enclave-signer/target/release/nitro_signer_app /nitro_signer_app
+
+RUN mkdir -p /rootfs
+WORKDIR /rootfs
+
+RUN BINS="/enclave-signer/target/release/nitro_signer_app" && \
+    for bin in $BINS; do \
+    ldd "$bin" | grep -Eo "/.*lib.*/[^ ]+" | \
+    while read path; do \
+    mkdir -p "./$(dirname $path)"; \
+    cp -fL "$path" "./$path"; \
+    done \
+    done && \
+    for bin in $BINS; do cp "$bin" .; done
+
+RUN mkdir -p ./etc/pki/tls/certs/ && cp -f /etc/pki/tls/certs/* ./etc/pki/tls/certs/
+RUN find ./
+
+FROM scratch
+
+COPY --from=builder /rootfs /
 
 ARG REGION
 ARG PROXY_PORT
