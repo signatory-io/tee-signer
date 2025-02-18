@@ -83,7 +83,7 @@ where
         let b = buf.initialize_unfilled();
         match recv_fn(b) {
             Ok(n) => {
-                if n > 0 {
+                if n > 0 && n < b.len() {
                     guard.clear_ready_matching(Ready::READABLE);
                 }
                 buf.advance(n);
@@ -114,7 +114,7 @@ where
         let mut guard = ready!(poller.poll_write_ready(cx))?;
         match send_fn(buf) {
             Ok(n) => {
-                if n > 0 {
+                if n > 0 && n < buf.len() {
                     guard.clear_ready_matching(Ready::WRITABLE);
                 }
                 break Poll::Ready(Ok(n));
