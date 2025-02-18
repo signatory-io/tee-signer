@@ -106,19 +106,16 @@ where
             buf.resize(len as usize, 0);
             sock.read_exact(&mut buf)?;
 
-            let ok = self.handle_message(&mut buf)?;
+            self.handle_message(&mut buf)?;
             let len = u32::try_from(buf.len()).unwrap().to_be_bytes();
             w_buf.clear();
             w_buf.extend_from_slice(&len);
             w_buf.extend_from_slice(&buf);
             sock.write_all(&w_buf)?;
-            if !ok {
-                break Ok(());
-            }
         }
     }
 
-    fn handle_message(&mut self, buf: &mut Vec<u8>) -> Result<bool, Error> {
+    fn handle_message(&mut self, buf: &mut Vec<u8>) -> Result<(), Error> {
         let req = Request::<F::Credentials>::try_from_cbor(buf);
         buf.clear();
 
@@ -126,10 +123,11 @@ where
             Ok(req) => req,
             Err(err) => {
                 // return deserialization error to the client
+                println!("invalid request: {}", err);
                 return RPCResult::<()>::Err(err.into())
                     .try_into_writer(buf)
                     .map_err(Into::into)
-                    .and(Ok(true));
+                    .and(Ok(()));
             }
         };
 
@@ -142,65 +140,65 @@ where
                 Err(err) => RPCResult::<()>::Err(err.into()),
             }
             .try_into_writer(buf)
-            .and(Ok(true)),
+            .and(Ok(())),
 
             (Request::Initialize(_), Some(_)) => {
                 RPCResult::<()>::Err(StateError::Initialized.into())
                     .try_into_writer(buf)
-                    .and(Ok(true))
+                    .and(Ok(()))
             }
 
             (_, None) => RPCResult::<()>::Err(StateError::Uninitialized.into())
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::Import(key_data), Some(signer)) => signer
                 .import(&key_data)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::ImportUnencrypted(key), Some(signer)) => signer
                 .import_unencrypted(key)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::Generate(t), Some(signer)) => signer
                 .generate(t, &mut self.rng)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::GenerateAndImport(t), Some(signer)) => signer
                 .generate_and_import(t, &mut self.rng)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::Sign { handle, msg }, Some(signer)) => signer
                 .try_sign(handle, &msg)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::SignWith { key_data, msg }, Some(signer)) => signer
                 .try_sign_with(&key_data, &msg)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::PublicKey(handle), Some(signer)) => signer
                 .public_key(handle)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::PublicKeyFrom(key_data), Some(signer)) => signer
                 .public_key_from(&key_data)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
         }
         .map_err(Into::into)
     }
@@ -236,19 +234,16 @@ where
             buf.resize(len as usize, 0);
             sock.read_exact(&mut buf).await?;
 
-            let ok = self.handle_message(&mut buf).await?;
+            self.handle_message(&mut buf).await?;
             let len = u32::try_from(buf.len()).unwrap().to_be_bytes();
             w_buf.clear();
             w_buf.extend_from_slice(&len);
             w_buf.extend_from_slice(&buf);
             sock.write_all(&w_buf).await?;
-            if !ok {
-                break Ok(());
-            }
         }
     }
 
-    async fn handle_message(&mut self, buf: &mut Vec<u8>) -> Result<bool, Error> {
+    async fn handle_message(&mut self, buf: &mut Vec<u8>) -> Result<(), Error> {
         let req = Request::<F::Credentials>::try_from_cbor(buf);
         buf.clear();
 
@@ -256,10 +251,11 @@ where
             Ok(req) => req,
             Err(err) => {
                 // return deserialization error to the client
+                println!("invalid request: {}", err);
                 return RPCResult::<()>::Err(err.into())
                     .try_into_writer(buf)
                     .map_err(Into::into)
-                    .and(Ok(true));
+                    .and(Ok(()));
             }
         };
 
@@ -272,71 +268,71 @@ where
                 Err(err) => RPCResult::<()>::Err(err.into()),
             }
             .try_into_writer(buf)
-            .and(Ok(true)),
+            .and(Ok(())),
 
             (Request::Initialize(_), Some(_)) => {
                 RPCResult::<()>::Err(StateError::Initialized.into())
                     .try_into_writer(buf)
-                    .and(Ok(true))
+                    .and(Ok(()))
             }
 
             (_, None) => RPCResult::<()>::Err(StateError::Uninitialized.into())
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::Import(key_data), Some(signer)) => signer
                 .import(&key_data)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::ImportUnencrypted(key), Some(signer)) => signer
                 .import_unencrypted(key)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::Generate(t), Some(signer)) => signer
                 .generate(t, &mut self.rng)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::GenerateAndImport(t), Some(signer)) => signer
                 .generate_and_import(t, &mut self.rng)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::Sign { handle, msg }, Some(signer)) => signer
                 .try_sign(handle, &msg)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::SignWith { key_data, msg }, Some(signer)) => signer
                 .try_sign_with(&key_data, &msg)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::PublicKey(handle), Some(signer)) => signer
                 .public_key(handle)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
 
             (Request::PublicKeyFrom(key_data), Some(signer)) => signer
                 .public_key_from(&key_data)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
-                .and(Ok(true)),
+                .and(Ok(())),
         }
         .map_err(Into::into)
     }
