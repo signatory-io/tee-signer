@@ -228,17 +228,23 @@ where
                     Err(err.into())
                 };
             }
+            #[cfg(debug_assertions)]
+            println!(">>> {:x?}", len_buf);
 
             let len = u32::from_be_bytes(len_buf);
 
             buf.resize(len as usize, 0);
             sock.read_exact(&mut buf).await?;
+            #[cfg(debug_assertions)]
+            println!(">>> {:x?}", buf);
 
             self.handle_message(&mut buf).await?;
             let len = u32::try_from(buf.len()).unwrap().to_be_bytes();
             w_buf.clear();
             w_buf.extend_from_slice(&len);
             w_buf.extend_from_slice(&buf);
+            #[cfg(debug_assertions)]
+            println!("<<< {:x?}", w_buf);
             sock.write_all(&w_buf).await?;
         }
     }
