@@ -134,7 +134,7 @@ impl RngCore for SharedRng {
                 Err(err) => return Err(rand_core::Error::new(Box::new(err))),
             };
             let sz = std::cmp::min(v.len(), dest.len());
-            (&mut dest[..sz]).copy_from_slice(&v);
+            (&mut dest[..sz]).copy_from_slice(&v[..sz]);
             dest = &mut dest[sz..];
         })
     }
