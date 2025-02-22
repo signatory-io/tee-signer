@@ -1,9 +1,9 @@
 use crate::crypto::{
-    helper, Blake2b256, CryptoRngCore, Deserialize, Digest, DigestSigner, Error as CryptoError,
-    KeyPair, NistP256, PublicKey as CryptoPublicKey, Random, Secp256k1, Serialize,
-    Signature as CryptoSignature,
+    helper, Blake2b256, CryptoRngCore, Deserialize, Digest, DigestSigner, KeyPair, NistP256,
+    Random, Secp256k1, Serialize,
 };
 use generic_array::typenum::Unsigned;
+use std::convert::Infallible;
 
 #[derive(Debug, Clone)]
 pub struct Signature<C>(C);
@@ -63,44 +63,20 @@ impl<'de> Deserialize<'de> for Signature<ecdsa::Signature<NistP256>> {
     }
 }
 
-impl From<ecdsa::Signature<Secp256k1>> for Signature<ecdsa::Signature<Secp256k1>> {
-    fn from(value: ecdsa::Signature<Secp256k1>) -> Self {
-        Signature(value)
-    }
-}
-
-impl From<ecdsa::Signature<NistP256>> for Signature<ecdsa::Signature<NistP256>> {
-    fn from(value: ecdsa::Signature<NistP256>) -> Self {
-        Signature(value)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SigningKey<C>(pub(crate) C);
 
 impl Random for SigningKey<ecdsa::SigningKey<Secp256k1>> {
-    type Error = ();
+    type Error = Infallible;
     fn random<R: CryptoRngCore>(r: &mut R) -> Result<Self, Self::Error> {
         Ok(SigningKey(ecdsa::SigningKey::random(r)))
     }
 }
 
 impl Random for SigningKey<ecdsa::SigningKey<NistP256>> {
-    type Error = ();
+    type Error = Infallible;
     fn random<R: CryptoRngCore>(r: &mut R) -> Result<Self, Self::Error> {
         Ok(SigningKey(ecdsa::SigningKey::random(r)))
-    }
-}
-
-impl From<ecdsa::SigningKey<Secp256k1>> for SigningKey<ecdsa::SigningKey<Secp256k1>> {
-    fn from(value: ecdsa::SigningKey<Secp256k1>) -> Self {
-        SigningKey(value)
-    }
-}
-
-impl From<ecdsa::SigningKey<NistP256>> for SigningKey<ecdsa::SigningKey<NistP256>> {
-    fn from(value: ecdsa::SigningKey<NistP256>) -> Self {
-        SigningKey(value)
     }
 }
 
@@ -160,28 +136,32 @@ impl<'de> Deserialize<'de> for SigningKey<ecdsa::SigningKey<NistP256>> {
 }
 
 impl KeyPair for SigningKey<ecdsa::SigningKey<Secp256k1>> {
-    fn public_key(&self) -> CryptoPublicKey {
-        CryptoPublicKey::Secp256k1(VerifyingKey(self.verifying_key().clone()))
+    type PublicKey = VerifyingKey<ecdsa::VerifyingKey<Secp256k1>>;
+    type Signature = Signature<ecdsa::Signature<Secp256k1>>;
+    type Error = signature::Error;
+
+    fn public_key(&self) -> Self::PublicKey {
+        VerifyingKey(self.verifying_key().clone())
     }
-    fn try_sign(&self, msg: &[u8]) -> Result<CryptoSignature, CryptoError> {
+    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
         let mut d = Blake2b256::new();
         d.update(msg);
-        Ok(CryptoSignature::Secp256k1(Signature(
-            self.0.try_sign_digest(d)?,
-        )))
+        Ok(Signature(self.0.try_sign_digest(d)?))
     }
 }
 
 impl KeyPair for SigningKey<ecdsa::SigningKey<NistP256>> {
-    fn public_key(&self) -> CryptoPublicKey {
-        CryptoPublicKey::NistP256(VerifyingKey(self.verifying_key().clone()))
+    type PublicKey = VerifyingKey<ecdsa::VerifyingKey<NistP256>>;
+    type Signature = Signature<ecdsa::Signature<NistP256>>;
+    type Error = signature::Error;
+
+    fn public_key(&self) -> Self::PublicKey {
+        VerifyingKey(self.verifying_key().clone())
     }
-    fn try_sign(&self, msg: &[u8]) -> Result<CryptoSignature, CryptoError> {
+    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
         let mut d = Blake2b256::new();
         d.update(msg);
-        Ok(CryptoSignature::NistP256(Signature(
-            self.0.try_sign_digest(d)?,
-        )))
+        Ok(Signature(self.0.try_sign_digest(d)?))
     }
 }
 
@@ -240,17 +220,5 @@ impl<'de> Deserialize<'de> for VerifyingKey<ecdsa::VerifyingKey<NistP256>> {
             Ok(val) => Ok(Self(val)),
             Err(err) => Err(serde::de::Error::custom(err)),
         }
-    }
-}
-
-impl From<ecdsa::VerifyingKey<Secp256k1>> for VerifyingKey<ecdsa::VerifyingKey<Secp256k1>> {
-    fn from(value: ecdsa::VerifyingKey<Secp256k1>) -> Self {
-        VerifyingKey(value)
-    }
-}
-
-impl From<ecdsa::VerifyingKey<NistP256>> for VerifyingKey<ecdsa::VerifyingKey<NistP256>> {
-    fn from(value: ecdsa::VerifyingKey<NistP256>) -> Self {
-        VerifyingKey(value)
     }
 }

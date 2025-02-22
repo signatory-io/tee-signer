@@ -1,9 +1,7 @@
-use crate::crypto::{
-    helper, CryptoRngCore, Deserialize, Error as CryptoError, KeyPair,
-    PublicKey as CryptoPublicKey, Random, Serialize, Signature as CryptoSignature, Verifier,
-};
+use crate::crypto::{helper, CryptoRngCore, Deserialize, KeyPair, Random, Serialize, Verifier};
 use blst::min_pk;
 pub use blst::BLST_ERROR;
+use std::convert::Infallible;
 
 const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
 
@@ -41,16 +39,16 @@ impl<'de> Deserialize<'de> for Signature {
 }
 
 #[derive(Debug)]
-pub struct VerifyingKey(min_pk::PublicKey);
+pub struct PublicKey(min_pk::PublicKey);
 
-impl core::ops::Deref for VerifyingKey {
+impl core::ops::Deref for PublicKey {
     type Target = min_pk::PublicKey;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl Verifier<Signature> for VerifyingKey {
+impl Verifier<Signature> for PublicKey {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
         let aug = self.to_bytes();
         match signature.0.verify(true, msg, BLS_DST, &aug, self, true) {
@@ -64,7 +62,7 @@ impl Verifier<Signature> for VerifyingKey {
 }
 
 // use compressed form for serialization
-impl Serialize for VerifyingKey {
+impl Serialize for PublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -73,14 +71,14 @@ impl Serialize for VerifyingKey {
     }
 }
 
-impl<'de> Deserialize<'de> for VerifyingKey {
+impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let bytes = deserializer.deserialize_bytes(helper::ByteArrayVisitor::<48>::new())?;
         match min_pk::PublicKey::uncompress(&bytes) {
-            Ok(val) => Ok(VerifyingKey(val)),
+            Ok(val) => Ok(PublicKey(val)),
             Err(err) => Err(serde::de::Error::custom(Error::from(err))),
         }
     }
@@ -106,15 +104,17 @@ impl Random for SigningKey {
 }
 
 impl KeyPair for SigningKey {
-    fn public_key(&self) -> CryptoPublicKey {
-        CryptoPublicKey::Bls(VerifyingKey(self.sk_to_pk()))
+    type PublicKey = PublicKey;
+    type Error = Infallible;
+    type Signature = Signature;
+
+    fn public_key(&self) -> Self::PublicKey {
+        PublicKey(self.sk_to_pk())
     }
 
-    fn try_sign(&self, msg: &[u8]) -> Result<CryptoSignature, CryptoError> {
+    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
         let aug = self.sk_to_pk().to_bytes();
-        Ok(CryptoSignature::Bls(Signature(
-            self.sign(msg, BLS_DST, &aug),
-        )))
+        Ok(Signature(self.sign(msg, BLS_DST, &aug)))
     }
 }
 

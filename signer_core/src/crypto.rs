@@ -12,12 +12,17 @@ pub mod ecdsa;
 pub(crate) mod helper;
 
 pub trait KeyPair: Debug {
-    fn public_key(&self) -> PublicKey;
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error>;
+    type PublicKey;
+    type Signature;
+    type Error;
+
+    fn public_key(&self) -> Self::PublicKey;
+    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error>;
 }
 
 pub trait Random: Sized {
     type Error;
+
     fn random<R: CryptoRngCore>(rng: &mut R) -> Result<Self, Self::Error>;
 }
 
@@ -49,28 +54,32 @@ impl From<ecdsa::Signature<::ecdsa::Signature<NistP256>>> for Signature {
     }
 }
 
-impl From<::ecdsa::Signature<Secp256k1>> for Signature {
-    fn from(value: ::ecdsa::Signature<Secp256k1>) -> Self {
-        Signature::Secp256k1(value.into())
+impl From<ed25519::Signature> for Signature {
+    fn from(value: ed25519::Signature) -> Self {
+        Signature::Ed25519(value)
     }
 }
 
-impl From<::ecdsa::Signature<NistP256>> for Signature {
-    fn from(value: ::ecdsa::Signature<NistP256>) -> Self {
-        Signature::NistP256(value.into())
+impl From<bls::Signature> for Signature {
+    fn from(value: bls::Signature) -> Self {
+        Signature::Bls(value)
     }
 }
 
 pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
 
 impl KeyPair for ed25519_dalek::SigningKey {
-    fn public_key(&self) -> PublicKey {
-        PublicKey::Ed25519(self.verifying_key().clone())
+    type PublicKey = ed25519_dalek::VerifyingKey;
+    type Signature = ed25519::Signature;
+    type Error = ed25519::signature::Error;
+
+    fn public_key(&self) -> Self::PublicKey {
+        self.verifying_key().clone()
     }
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
+    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
         // Tezos uses Blake2b pre-hashing in conjunction with regular Ed25519/SHA512
         let d = Blake2b256::digest(msg);
-        Ok(Signature::Ed25519(Signer::try_sign(self, &d)?))
+        Ok(Signer::try_sign(self, &d)?)
     }
 }
 
@@ -85,30 +94,70 @@ pub enum PrivateKey {
 impl PrivateKey {
     pub fn generate<R: rand_core::CryptoRngCore>(t: KeyType, r: &mut R) -> Result<Self, Error> {
         match t {
-            KeyType::Secp256k1 => Ok(PrivateKey::Secp256k1(ecdsa::SigningKey::random(r).unwrap())),
-            KeyType::NistP256 => Ok(PrivateKey::NistP256(ecdsa::SigningKey::random(r).unwrap())),
-            KeyType::Ed25519 => Ok(PrivateKey::Ed25519(ed25519_dalek::SigningKey::generate(r))),
-            KeyType::Bls => Ok(PrivateKey::Bls(bls::SigningKey::random(r)?)),
+            KeyType::Secp256k1 => Ok(ecdsa::SigningKey::<::ecdsa::SigningKey<Secp256k1>>::random(
+                r,
+            )
+            .unwrap()
+            .into()),
+            KeyType::NistP256 => Ok(
+                ecdsa::SigningKey::<::ecdsa::SigningKey<NistP256>>::random(r)
+                    .unwrap()
+                    .into(),
+            ),
+            KeyType::Ed25519 => Ok(ed25519_dalek::SigningKey::generate(r).into()),
+            KeyType::Bls => bls::SigningKey::random(r)
+                .map(Into::into)
+                .map_err(Into::into),
         }
     }
 }
 
+impl From<ecdsa::SigningKey<::ecdsa::SigningKey<Secp256k1>>> for PrivateKey {
+    fn from(value: ecdsa::SigningKey<::ecdsa::SigningKey<Secp256k1>>) -> Self {
+        PrivateKey::Secp256k1(value)
+    }
+}
+
+impl From<ecdsa::SigningKey<::ecdsa::SigningKey<NistP256>>> for PrivateKey {
+    fn from(value: ecdsa::SigningKey<::ecdsa::SigningKey<NistP256>>) -> Self {
+        PrivateKey::NistP256(value)
+    }
+}
+
+impl From<ed25519_dalek::SigningKey> for PrivateKey {
+    fn from(value: ed25519_dalek::SigningKey) -> Self {
+        PrivateKey::Ed25519(value)
+    }
+}
+
+impl From<bls::SigningKey> for PrivateKey {
+    fn from(value: bls::SigningKey) -> Self {
+        PrivateKey::Bls(value)
+    }
+}
+
 impl KeyPair for PrivateKey {
-    fn try_sign(&self, msg: &[u8]) -> Result<Signature, Error> {
+    type PublicKey = PublicKey;
+    type Signature = Signature;
+    type Error = Error;
+
+    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
         match self {
-            PrivateKey::Secp256k1(val) => val.try_sign(msg),
-            PrivateKey::NistP256(val) => val.try_sign(msg),
-            PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg),
-            PrivateKey::Bls(val) => val.try_sign(msg),
+            PrivateKey::Secp256k1(val) => val.try_sign(msg).map(Into::into).map_err(Into::into),
+            PrivateKey::NistP256(val) => val.try_sign(msg).map(Into::into).map_err(Into::into),
+            PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg)
+                .map(Into::into)
+                .map_err(Into::into),
+            PrivateKey::Bls(val) => Ok(val.try_sign(msg).unwrap().into()),
         }
     }
 
-    fn public_key(&self) -> PublicKey {
+    fn public_key(&self) -> Self::PublicKey {
         match self {
-            PrivateKey::Secp256k1(val) => val.public_key(),
-            PrivateKey::NistP256(val) => val.public_key(),
-            PrivateKey::Ed25519(val) => val.public_key(),
-            PrivateKey::Bls(val) => val.public_key(),
+            PrivateKey::Secp256k1(val) => val.public_key().into(),
+            PrivateKey::NistP256(val) => val.public_key().into(),
+            PrivateKey::Ed25519(val) => val.public_key().into(),
+            PrivateKey::Bls(val) => val.public_key().into(),
         }
     }
 }
@@ -118,7 +167,31 @@ pub enum PublicKey {
     Secp256k1(ecdsa::VerifyingKey<::ecdsa::VerifyingKey<Secp256k1>>),
     NistP256(ecdsa::VerifyingKey<::ecdsa::VerifyingKey<NistP256>>),
     Ed25519(ed25519_dalek::VerifyingKey),
-    Bls(bls::VerifyingKey),
+    Bls(bls::PublicKey),
+}
+
+impl From<ecdsa::VerifyingKey<::ecdsa::VerifyingKey<Secp256k1>>> for PublicKey {
+    fn from(value: ecdsa::VerifyingKey<::ecdsa::VerifyingKey<Secp256k1>>) -> Self {
+        PublicKey::Secp256k1(value)
+    }
+}
+
+impl From<ecdsa::VerifyingKey<::ecdsa::VerifyingKey<NistP256>>> for PublicKey {
+    fn from(value: ecdsa::VerifyingKey<::ecdsa::VerifyingKey<NistP256>>) -> Self {
+        PublicKey::NistP256(value)
+    }
+}
+
+impl From<ed25519_dalek::VerifyingKey> for PublicKey {
+    fn from(value: ed25519_dalek::VerifyingKey) -> Self {
+        PublicKey::Ed25519(value)
+    }
+}
+
+impl From<bls::PublicKey> for PublicKey {
+    fn from(value: bls::PublicKey) -> Self {
+        PublicKey::Bls(value)
+    }
 }
 
 #[derive(Debug)]
@@ -162,7 +235,7 @@ impl From<bls::Error> for Error {
 
 #[derive(Debug)]
 pub struct Keychain {
-    keys: Vec<Box<dyn KeyPair + Send + Sync>>,
+    keys: Vec<PrivateKey>,
 }
 
 impl Keychain {
@@ -171,13 +244,7 @@ impl Keychain {
     }
 
     pub fn import(&mut self, src: PrivateKey) -> usize {
-        let signer: Box<dyn KeyPair + Send + Sync> = match src {
-            PrivateKey::Secp256k1(val) => Box::new(val),
-            PrivateKey::NistP256(val) => Box::new(val),
-            PrivateKey::Ed25519(val) => Box::new(val),
-            PrivateKey::Bls(val) => Box::new(val),
-        };
-        self.keys.push(signer);
+        self.keys.push(src);
         self.keys.len() - 1
     }
 
