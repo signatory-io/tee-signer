@@ -116,7 +116,6 @@ impl<S: std::error::Error> From<crypto::Error> for Error<S> {
     }
 }
 
-#[derive(Debug)]
 struct SealedSignerInner<S> {
     keychain: Keychain,
     sealant: S,
@@ -139,7 +138,6 @@ impl<S: Sealant> SealedSignerInner<S> {
     }
 }
 
-#[derive(Debug)]
 pub struct SealedSigner<S>(SealedSignerInner<S>);
 
 impl<S: SyncSealant> SealedSigner<S> {
@@ -225,7 +223,6 @@ where
     }
 }
 
-#[derive(Debug)]
 pub struct AsyncSealedSigner<S>(SealedSignerInner<S>);
 
 impl<S: AsyncSealant> AsyncSealedSigner<S> {
