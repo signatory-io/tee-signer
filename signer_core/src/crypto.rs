@@ -9,6 +9,7 @@ use std::fmt::Debug;
 
 pub mod bls;
 pub mod ecdsa;
+pub(crate) mod helper;
 
 pub trait KeyPair: Debug {
     fn public_key(&self) -> PublicKey;
@@ -30,10 +31,34 @@ pub enum KeyType {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Signature {
-    Secp256k1(::ecdsa::Signature<Secp256k1>),
-    NistP256(::ecdsa::Signature<NistP256>),
+    Secp256k1(ecdsa::Signature<::ecdsa::Signature<Secp256k1>>),
+    NistP256(ecdsa::Signature<::ecdsa::Signature<NistP256>>),
     Ed25519(ed25519::Signature),
     Bls(bls::Signature),
+}
+
+impl From<ecdsa::Signature<::ecdsa::Signature<Secp256k1>>> for Signature {
+    fn from(value: ecdsa::Signature<::ecdsa::Signature<Secp256k1>>) -> Self {
+        Signature::Secp256k1(value)
+    }
+}
+
+impl From<ecdsa::Signature<::ecdsa::Signature<NistP256>>> for Signature {
+    fn from(value: ecdsa::Signature<::ecdsa::Signature<NistP256>>) -> Self {
+        Signature::NistP256(value)
+    }
+}
+
+impl From<::ecdsa::Signature<Secp256k1>> for Signature {
+    fn from(value: ::ecdsa::Signature<Secp256k1>) -> Self {
+        Signature::Secp256k1(value.into())
+    }
+}
+
+impl From<::ecdsa::Signature<NistP256>> for Signature {
+    fn from(value: ::ecdsa::Signature<NistP256>) -> Self {
+        Signature::NistP256(value.into())
+    }
 }
 
 pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
@@ -90,10 +115,10 @@ impl KeyPair for PrivateKey {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PublicKey {
-    Secp256k1(::ecdsa::VerifyingKey<Secp256k1>),
-    NistP256(::ecdsa::VerifyingKey<NistP256>),
+    Secp256k1(ecdsa::VerifyingKey<::ecdsa::VerifyingKey<Secp256k1>>),
+    NistP256(ecdsa::VerifyingKey<::ecdsa::VerifyingKey<NistP256>>),
     Ed25519(ed25519_dalek::VerifyingKey),
-    Bls(bls::PublicKey),
+    Bls(bls::VerifyingKey),
 }
 
 #[derive(Debug)]
@@ -248,7 +273,7 @@ mod tests {
 
         let mut digest = Blake2b256::new();
         digest.update(data);
-        pub_key.verify_digest(digest, &sig).unwrap();
+        pub_key.verify_digest(digest, &*sig).unwrap();
     }
 
     #[test]
@@ -267,7 +292,7 @@ mod tests {
 
         let mut digest = Blake2b256::new();
         digest.update(data);
-        pub_key.verify_digest(digest, &sig).unwrap();
+        pub_key.verify_digest(digest, &*sig).unwrap();
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::crypto::{
-    CryptoRngCore, Deserialize, Error as CryptoError, KeyPair, PublicKey as CryptoPublicKey,
-    Random, Serialize, Signature as CryptoSignature, Verifier,
+    helper, CryptoRngCore, Deserialize, Error as CryptoError, KeyPair,
+    PublicKey as CryptoPublicKey, Random, Serialize, Signature as CryptoSignature, Verifier,
 };
 use blst::min_pk;
 pub use blst::BLST_ERROR;
@@ -23,7 +23,7 @@ impl Serialize for Signature {
     where
         S: serde::Serializer,
     {
-        serdect::array::serialize_hex_upper_or_bin(&self.0.compress(), serializer)
+        serializer.serialize_bytes(&self.0.compress())
     }
 }
 
@@ -32,8 +32,7 @@ impl<'de> Deserialize<'de> for Signature {
     where
         D: serde::Deserializer<'de>,
     {
-        let mut bytes: [u8; 96] = [0; 96];
-        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
+        let bytes = deserializer.deserialize_bytes(helper::ByteArrayVisitor::<96>::new())?;
         match min_pk::Signature::uncompress(&bytes) {
             Ok(val) => Ok(Signature(val)),
             Err(err) => Err(serde::de::Error::custom(Error::from(err))),
@@ -42,16 +41,16 @@ impl<'de> Deserialize<'de> for Signature {
 }
 
 #[derive(Debug)]
-pub struct PublicKey(min_pk::PublicKey);
+pub struct VerifyingKey(min_pk::PublicKey);
 
-impl core::ops::Deref for PublicKey {
+impl core::ops::Deref for VerifyingKey {
     type Target = min_pk::PublicKey;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl Verifier<Signature> for PublicKey {
+impl Verifier<Signature> for VerifyingKey {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
         let aug = self.to_bytes();
         match signature.0.verify(true, msg, BLS_DST, &aug, self, true) {
@@ -65,24 +64,23 @@ impl Verifier<Signature> for PublicKey {
 }
 
 // use compressed form for serialization
-impl Serialize for PublicKey {
+impl Serialize for VerifyingKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serdect::array::serialize_hex_upper_or_bin(&self.0.compress(), serializer)
+        serializer.serialize_bytes(&self.0.compress())
     }
 }
 
-impl<'de> Deserialize<'de> for PublicKey {
+impl<'de> Deserialize<'de> for VerifyingKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let mut bytes: [u8; 48] = [0; 48];
-        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
+        let bytes = deserializer.deserialize_bytes(helper::ByteArrayVisitor::<48>::new())?;
         match min_pk::PublicKey::uncompress(&bytes) {
-            Ok(val) => Ok(PublicKey(val)),
+            Ok(val) => Ok(VerifyingKey(val)),
             Err(err) => Err(serde::de::Error::custom(Error::from(err))),
         }
     }
@@ -109,7 +107,7 @@ impl Random for SigningKey {
 
 impl KeyPair for SigningKey {
     fn public_key(&self) -> CryptoPublicKey {
-        CryptoPublicKey::Bls(PublicKey(self.sk_to_pk()))
+        CryptoPublicKey::Bls(VerifyingKey(self.sk_to_pk()))
     }
 
     fn try_sign(&self, msg: &[u8]) -> Result<CryptoSignature, CryptoError> {
@@ -125,7 +123,7 @@ impl Serialize for SigningKey {
     where
         S: serde::Serializer,
     {
-        serdect::array::serialize_hex_upper_or_bin(&self.0.serialize(), serializer)
+        serializer.serialize_bytes(&self.0.serialize())
     }
 }
 
@@ -134,8 +132,7 @@ impl<'de> Deserialize<'de> for SigningKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let mut bytes: [u8; 32] = [0; 32];
-        serdect::array::deserialize_hex_or_bin(&mut bytes, deserializer)?;
+        let bytes = deserializer.deserialize_bytes(helper::ByteArrayVisitor::<32>::new())?;
         match min_pk::SecretKey::deserialize(&bytes) {
             Ok(val) => Ok(SigningKey(val)),
             Err(err) => Err(serde::de::Error::custom(Error::from(err))),

@@ -409,7 +409,7 @@ mod tests {
         digest.update(data);
 
         unwrap_as!(pub_key, PublicKey::Secp256k1)
-            .verify_digest(digest, &sig)
+            .verify_digest(digest, &*sig)
             .unwrap();
     }
 
@@ -430,7 +430,7 @@ mod tests {
         digest.update(data);
 
         unwrap_as!(pub_key, PublicKey::NistP256)
-            .verify_digest(digest, &sig)
+            .verify_digest(digest, &*sig)
             .unwrap();
     }
 

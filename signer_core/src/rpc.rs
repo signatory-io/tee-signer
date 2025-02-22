@@ -96,7 +96,7 @@ mod tests {
                 let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
                 let mut digest = Blake2b256::new();
                 digest.update(data);
-                pub_key.verify_digest(digest, &sig).unwrap();
+                pub_key.verify_digest(digest, &*sig).unwrap();
             }
             jh.join().unwrap();
         }
@@ -177,7 +177,7 @@ mod tests {
                 let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
                 let mut digest = Blake2b256::new();
                 digest.update(data);
-                pub_key.verify_digest(digest, &sig).unwrap();
+                pub_key.verify_digest(digest, &*sig).unwrap();
             }
             jh.join().unwrap();
         }
@@ -298,7 +298,7 @@ mod tests {
                     let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
                     let mut digest = Blake2b256::new();
                     digest.update(data);
-                    pub_key.verify_digest(digest, &sig).unwrap();
+                    pub_key.verify_digest(digest, &*sig).unwrap();
                 }
             );
         }

@@ -17,7 +17,6 @@ elliptic-curve = { version = "0.13", features = ["serde"] }
 generic-array = { version = "0.14", features = ["serde"] }
 blst = { version = "0.3", features = ["serde", "serde-secret"] }
 subtle = "2.6"
-serdect = "0.2"
 ciborium = "0.2"
 rand_core = "0.6"
 libc = "0.2"

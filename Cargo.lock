@@ -2117,7 +2117,6 @@ dependencies = [
  "p256",
  "rand_core",
  "serde",
- "serdect",
  "signature",
  "subtle",
  "tokio",
