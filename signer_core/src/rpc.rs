@@ -1,4 +1,7 @@
-use crate::crypto::{KeyType, PrivateKey};
+use crate::{
+    crypto::{KeyType, PrivateKey},
+    serde_helper::bytes,
+};
 use serde::{Deserialize, Serialize};
 
 pub mod client;
@@ -7,14 +10,22 @@ pub mod server;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request<C> {
     Initialize(C),
-    Import(Vec<u8>),
+    Import(#[serde(with = "bytes")] Vec<u8>),
     ImportUnencrypted(PrivateKey),
     Generate(KeyType),
     GenerateAndImport(KeyType),
-    Sign { handle: usize, msg: Vec<u8> },
-    SignWith { key_data: Vec<u8>, msg: Vec<u8> },
+    Sign {
+        handle: usize,
+        #[serde(with = "bytes")]
+        msg: Vec<u8>,
+    },
+    SignWith {
+        #[serde(with = "bytes")]
+        key_data: Vec<u8>,
+        msg: Vec<u8>,
+    },
     PublicKey(usize),
-    PublicKeyFrom(Vec<u8>),
+    PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
 }
 
 /// Wire-compatible error object

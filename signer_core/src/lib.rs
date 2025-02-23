@@ -5,6 +5,7 @@ use std::future::Future;
 
 pub mod crypto;
 pub mod rpc;
+pub(crate) mod serde_helper;
 
 trait TryIntoCBOR {
     type Error;

@@ -1,6 +1,8 @@
-use crate::crypto::{
-    helper, Blake2b256, CryptoRngCore, Deserialize, Digest, DigestSigner, KeyPair, Random,
-    Serialize,
+use crate::{
+    crypto::{
+        Blake2b256, CryptoRngCore, Deserialize, Digest, DigestSigner, KeyPair, Random, Serialize,
+    },
+    serde_helper,
 };
 use ecdsa::{hazmat::SignPrimitive, SignatureSize};
 use elliptic_curve::{
@@ -54,8 +56,8 @@ where
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes =
-            deserializer.deserialize_bytes(helper::BytesVisitor::new(SignatureSize::<C>::USIZE))?;
+        let bytes = deserializer
+            .deserialize_bytes(serde_helper::BytesVisitor::new(SignatureSize::<C>::USIZE))?;
         match ecdsa::Signature::from_slice(&bytes) {
             Ok(val) => Ok(Self(val)),
             Err(err) => Err(serde::de::Error::custom(err)),
@@ -119,7 +121,7 @@ where
         D: serde::Deserializer<'de>,
     {
         let bytes = deserializer
-            .deserialize_bytes(helper::BytesVisitor::new(FieldBytesSize::<C>::USIZE))?;
+            .deserialize_bytes(serde_helper::BytesVisitor::new(FieldBytesSize::<C>::USIZE))?;
         match ecdsa::SigningKey::from_slice(&bytes) {
             Ok(val) => Ok(Self(val)),
             Err(err) => Err(serde::de::Error::custom(err)),
@@ -187,8 +189,9 @@ where
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes = deserializer
-            .deserialize_bytes(helper::BytesVisitor::new(CompressedPointSize::<C>::USIZE))?;
+        let bytes = deserializer.deserialize_bytes(serde_helper::BytesVisitor::new(
+            CompressedPointSize::<C>::USIZE,
+        ))?;
         match ecdsa::VerifyingKey::from_sec1_bytes(&bytes) {
             Ok(val) => Ok(Self(val)),
             Err(err) => Err(serde::de::Error::custom(err)),

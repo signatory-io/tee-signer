@@ -1,4 +1,7 @@
-use crate::crypto::{helper, CryptoRngCore, Deserialize, KeyPair, Random, Serialize, Verifier};
+use crate::{
+    crypto::{CryptoRngCore, Deserialize, KeyPair, Random, Serialize, Verifier},
+    serde_helper,
+};
 use blst::min_pk;
 pub use blst::BLST_ERROR;
 use std::convert::Infallible;
@@ -30,7 +33,7 @@ impl<'de> Deserialize<'de> for Signature {
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes = deserializer.deserialize_bytes(helper::ByteArrayVisitor::<96>::new())?;
+        let bytes = deserializer.deserialize_bytes(serde_helper::ByteArrayVisitor::<96>::new())?;
         match min_pk::Signature::uncompress(&bytes) {
             Ok(val) => Ok(Signature(val)),
             Err(err) => Err(serde::de::Error::custom(Error::from(err))),
@@ -76,7 +79,7 @@ impl<'de> Deserialize<'de> for PublicKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes = deserializer.deserialize_bytes(helper::ByteArrayVisitor::<48>::new())?;
+        let bytes = deserializer.deserialize_bytes(serde_helper::ByteArrayVisitor::<48>::new())?;
         match min_pk::PublicKey::uncompress(&bytes) {
             Ok(val) => Ok(PublicKey(val)),
             Err(err) => Err(serde::de::Error::custom(Error::from(err))),
@@ -132,7 +135,7 @@ impl<'de> Deserialize<'de> for SigningKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes = deserializer.deserialize_bytes(helper::ByteArrayVisitor::<32>::new())?;
+        let bytes = deserializer.deserialize_bytes(serde_helper::ByteArrayVisitor::<32>::new())?;
         match min_pk::SecretKey::deserialize(&bytes) {
             Ok(val) => Ok(SigningKey(val)),
             Err(err) => Err(serde::de::Error::custom(Error::from(err))),

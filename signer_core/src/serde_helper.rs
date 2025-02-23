@@ -1,6 +1,8 @@
 use serde::de::{self, SeqAccess, Visitor};
 use std::marker::PhantomData;
 
+pub mod bytes;
+
 pub struct ByteArrayVisitor<const T: usize> {
     _p: PhantomData<[u8; T]>,
 }

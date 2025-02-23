@@ -11,8 +11,6 @@ pub mod ecdsa;
 use ecdsa::NistP256;
 use ecdsa::Secp256k1;
 
-pub(crate) mod helper;
-
 pub trait KeyPair {
     type PublicKey;
     type Signature;
