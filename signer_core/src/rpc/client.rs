@@ -137,14 +137,14 @@ where
     pub fn try_sign(&mut self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::Sign {
             handle: handle,
-            msg: msg.into(),
+            message: msg.into(),
         })
     }
 
     pub fn try_sign_with(&mut self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::SignWith {
-            key_data: key_data.into(),
-            msg: msg.into(),
+            encrypted_private_key: key_data.into(),
+            message: msg.into(),
         })
     }
 
@@ -229,15 +229,15 @@ where
     pub async fn try_sign(&mut self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::Sign {
             handle: handle,
-            msg: msg.into(),
+            message: msg.into(),
         })
         .await
     }
 
     pub async fn try_sign_with(&mut self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::SignWith {
-            key_data: key_data.into(),
-            msg: msg.into(),
+            encrypted_private_key: key_data.into(),
+            message: msg.into(),
         })
         .await
     }

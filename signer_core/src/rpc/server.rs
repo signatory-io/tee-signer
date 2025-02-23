@@ -177,13 +177,25 @@ where
                 .try_into_writer(buf)
                 .and(Ok(())),
 
-            (Request::Sign { handle, msg }, Some(signer)) => signer
+            (
+                Request::Sign {
+                    handle,
+                    message: msg,
+                },
+                Some(signer),
+            ) => signer
                 .try_sign(handle, &msg)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(())),
 
-            (Request::SignWith { key_data, msg }, Some(signer)) => signer
+            (
+                Request::SignWith {
+                    encrypted_private_key: key_data,
+                    message: msg,
+                },
+                Some(signer),
+            ) => signer
                 .try_sign_with(&key_data, &msg)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
@@ -315,13 +327,25 @@ where
                 .try_into_writer(buf)
                 .and(Ok(())),
 
-            (Request::Sign { handle, msg }, Some(signer)) => signer
+            (
+                Request::Sign {
+                    handle,
+                    message: msg,
+                },
+                Some(signer),
+            ) => signer
                 .try_sign(handle, &msg)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(())),
 
-            (Request::SignWith { key_data, msg }, Some(signer)) => signer
+            (
+                Request::SignWith {
+                    encrypted_private_key: key_data,
+                    message: msg,
+                },
+                Some(signer),
+            ) => signer
                 .try_sign_with(&key_data, &msg)
                 .await
                 .map_err(RPCError::from)

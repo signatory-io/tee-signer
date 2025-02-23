@@ -18,13 +18,13 @@ pub enum Request<C> {
     Sign {
         handle: usize,
         #[serde(with = "bytes")]
-        msg: Vec<u8>,
+        message: Vec<u8>,
     },
     SignWith {
         #[serde(with = "bytes")]
-        key_data: Vec<u8>,
+        encrypted_private_key: Vec<u8>,
         #[serde(with = "bytes")]
-        msg: Vec<u8>,
+        message: Vec<u8>,
     },
     PublicKey(usize),
     PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
