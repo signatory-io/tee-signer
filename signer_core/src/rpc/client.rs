@@ -1,5 +1,8 @@
 use crate::crypto::{KeyType, PrivateKey, PublicKey, Signature};
-use crate::rpc::{Error as RPCError, Request, Result as RPCResult};
+use crate::rpc::{
+    Error as RPCError, GenerateAndImportResult, GenerateResult, ImportResult, Request,
+    Result as RPCResult,
+};
 use crate::{TryFromCBOR, TryIntoCBOR};
 use serde::Serialize;
 use std::io::{Read, Write};
@@ -112,28 +115,23 @@ where
         self.round_trip::<()>(Request::Initialize(cred))
     }
 
-    pub fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {
-        self.round_trip::<(PublicKey, usize)>(Request::Import(key_data.into()))
+    pub fn import(&mut self, key_data: &[u8]) -> Result<ImportResult, Error> {
+        self.round_trip::<ImportResult>(Request::Import(key_data.into()))
     }
 
     pub fn import_unencrypted(
         &mut self,
         private_key: &PrivateKey,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error> {
-        self.round_trip::<(Vec<u8>, PublicKey, usize)>(Request::ImportUnencrypted(
-            private_key.clone(),
-        ))
+    ) -> Result<GenerateAndImportResult, Error> {
+        self.round_trip::<GenerateAndImportResult>(Request::ImportUnencrypted(private_key.clone()))
     }
 
-    pub fn generate(&mut self, t: KeyType) -> Result<(Vec<u8>, PublicKey), Error> {
-        self.round_trip::<(Vec<u8>, PublicKey)>(Request::Generate(t))
+    pub fn generate(&mut self, t: KeyType) -> Result<GenerateResult, Error> {
+        self.round_trip::<GenerateResult>(Request::Generate(t))
     }
 
-    pub fn generate_and_import(
-        &mut self,
-        t: KeyType,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error> {
-        self.round_trip::<(Vec<u8>, PublicKey, usize)>(Request::GenerateAndImport(t))
+    pub fn generate_and_import(&mut self, t: KeyType) -> Result<GenerateAndImportResult, Error> {
+        self.round_trip::<GenerateAndImportResult>(Request::GenerateAndImport(t))
     }
 
     pub fn try_sign(&mut self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
@@ -202,31 +200,29 @@ where
         self.round_trip::<()>(Request::Initialize(cred)).await
     }
 
-    pub async fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error> {
-        self.round_trip::<(PublicKey, usize)>(Request::Import(key_data.into()))
+    pub async fn import(&mut self, key_data: &[u8]) -> Result<ImportResult, Error> {
+        self.round_trip::<ImportResult>(Request::Import(key_data.into()))
             .await
     }
 
     pub async fn import_unencrypted(
         &mut self,
         private_key: &PrivateKey,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error> {
-        self.round_trip::<(Vec<u8>, PublicKey, usize)>(Request::ImportUnencrypted(
-            private_key.clone(),
-        ))
-        .await
+    ) -> Result<GenerateAndImportResult, Error> {
+        self.round_trip::<GenerateAndImportResult>(Request::ImportUnencrypted(private_key.clone()))
+            .await
     }
 
-    pub async fn generate(&mut self, t: KeyType) -> Result<(Vec<u8>, PublicKey), Error> {
-        self.round_trip::<(Vec<u8>, PublicKey)>(Request::Generate(t))
+    pub async fn generate(&mut self, t: KeyType) -> Result<GenerateResult, Error> {
+        self.round_trip::<GenerateResult>(Request::Generate(t))
             .await
     }
 
     pub async fn generate_and_import(
         &mut self,
         t: KeyType,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error> {
-        self.round_trip::<(Vec<u8>, PublicKey, usize)>(Request::GenerateAndImport(t))
+    ) -> Result<GenerateAndImportResult, Error> {
+        self.round_trip::<GenerateAndImportResult>(Request::GenerateAndImport(t))
             .await
     }
 

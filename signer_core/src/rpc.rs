@@ -2,6 +2,7 @@ use crate::{
     crypto::{KeyType, PrivateKey},
     serde_helper::bytes,
 };
+pub use crate::{GenerateAndImportResult, GenerateResult, ImportResult};
 use serde::{Deserialize, Serialize};
 
 pub mod client;
@@ -98,14 +99,16 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (enc_pk, pub_key) = client.generate(KeyType::Secp256k1).unwrap();
+                let res = client.generate(KeyType::Secp256k1).unwrap();
 
                 let data = b"text";
                 let sig = unwrap_as!(
-                    client.try_sign_with(&enc_pk, data).unwrap(),
+                    client
+                        .try_sign_with(&res.encrypted_private_key, data)
+                        .unwrap(),
                     Signature::Secp256k1
                 );
-                let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Secp256k1);
                 let mut digest = Blake2b256::new();
                 digest.update(data);
                 pub_key.verify_digest(digest, &*sig).unwrap();
@@ -127,14 +130,16 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (enc_pk, pub_key) = client.generate(KeyType::Ed25519).unwrap();
+                let res = client.generate(KeyType::Ed25519).unwrap();
 
                 let data = b"text";
                 let sig = unwrap_as!(
-                    client.try_sign_with(&enc_pk, data).unwrap(),
+                    client
+                        .try_sign_with(&res.encrypted_private_key, data)
+                        .unwrap(),
                     Signature::Ed25519
                 );
-                let pub_key = unwrap_as!(pub_key, PublicKey::Ed25519);
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Ed25519);
                 let digest = Blake2b256::digest(data);
                 pub_key.verify(&digest, &sig).unwrap();
             }
@@ -155,11 +160,16 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (enc_pk, pub_key) = client.generate(KeyType::Bls).unwrap();
+                let res = client.generate(KeyType::Bls).unwrap();
 
                 let data = b"text";
-                let sig = unwrap_as!(client.try_sign_with(&enc_pk, data).unwrap(), Signature::Bls);
-                let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
+                let sig = unwrap_as!(
+                    client
+                        .try_sign_with(&res.encrypted_private_key, data)
+                        .unwrap(),
+                    Signature::Bls
+                );
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Bls);
                 pub_key.verify(data, &sig).unwrap();
             }
             jh.join().unwrap();
@@ -179,11 +189,14 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (_, pub_key, handle) = client.generate_and_import(KeyType::Secp256k1).unwrap();
+                let res = client.generate_and_import(KeyType::Secp256k1).unwrap();
 
                 let data = b"text";
-                let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Secp256k1);
-                let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
+                let sig = unwrap_as!(
+                    client.try_sign(res.handle, data).unwrap(),
+                    Signature::Secp256k1
+                );
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Secp256k1);
                 let mut digest = Blake2b256::new();
                 digest.update(data);
                 pub_key.verify_digest(digest, &*sig).unwrap();
@@ -205,11 +218,14 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (_, pub_key, handle) = client.generate_and_import(KeyType::Ed25519).unwrap();
+                let res = client.generate_and_import(KeyType::Ed25519).unwrap();
 
                 let data = b"text";
-                let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Ed25519);
-                let pub_key = unwrap_as!(pub_key, PublicKey::Ed25519);
+                let sig = unwrap_as!(
+                    client.try_sign(res.handle, data).unwrap(),
+                    Signature::Ed25519
+                );
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Ed25519);
                 let digest = Blake2b256::digest(data);
                 pub_key.verify(&digest, &sig).unwrap();
             }
@@ -230,11 +246,11 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (_, pub_key, handle) = client.generate_and_import(KeyType::Bls).unwrap();
+                let res = client.generate_and_import(KeyType::Bls).unwrap();
 
                 let data = b"text";
-                let sig = unwrap_as!(client.try_sign(handle, data).unwrap(), Signature::Bls);
-                let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
+                let sig = unwrap_as!(client.try_sign(res.handle, data).unwrap(), Signature::Bls);
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Bls);
                 pub_key.verify(data, &sig).unwrap();
             }
             jh.join().unwrap();
@@ -297,14 +313,17 @@ mod tests {
                 },
                 async move {
                     client.initialize(DummyCredentials {}).await.unwrap();
-                    let (enc_pk, pub_key) = client.generate(KeyType::Secp256k1).await.unwrap();
+                    let res = client.generate(KeyType::Secp256k1).await.unwrap();
 
                     let data = b"text";
                     let sig = unwrap_as!(
-                        client.try_sign_with(&enc_pk, data).await.unwrap(),
+                        client
+                            .try_sign_with(&res.encrypted_private_key, data)
+                            .await
+                            .unwrap(),
                         Signature::Secp256k1
                     );
-                    let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
+                    let pub_key = unwrap_as!(res.public_key, PublicKey::Secp256k1);
                     let mut digest = Blake2b256::new();
                     digest.update(data);
                     pub_key.verify_digest(digest, &*sig).unwrap();

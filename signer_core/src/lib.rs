@@ -1,11 +1,13 @@
 use crypto::{KeyPair, KeyType, Keychain, PrivateKey, PublicKey, Signature};
 use rand_core::CryptoRngCore;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::future::Future;
 
 pub mod crypto;
 pub mod rpc;
 pub(crate) mod serde_helper;
+
+use serde_helper::bytes;
 
 trait TryIntoCBOR {
     type Error;
@@ -117,6 +119,27 @@ impl<S: std::error::Error> From<crypto::Error> for Error<S> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImportResult {
+    pub public_key: PublicKey,
+    pub handle: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GenerateResult {
+    #[serde(with = "bytes")]
+    pub encrypted_private_key: Vec<u8>,
+    pub public_key: PublicKey,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GenerateAndImportResult {
+    #[serde(with = "bytes")]
+    pub encrypted_private_key: Vec<u8>,
+    pub public_key: PublicKey,
+    pub handle: usize,
+}
+
 struct EncryptedSignerInner<E> {
     keychain: Keychain,
     enc: E,
@@ -169,41 +192,55 @@ impl<E: SyncEncryptionBackend> EncryptedSigner<E> {
         }
     }
 
-    pub fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error<E::Error>> {
+    pub fn import(&mut self, key_data: &[u8]) -> Result<ImportResult, Error<E::Error>> {
         let pk = self.decrypt(key_data)?;
         let p = pk.public_key();
-        Ok((p, self.0.keychain.import(pk)))
+        Ok(ImportResult {
+            public_key: p,
+            handle: self.0.keychain.import(pk),
+        })
     }
 
     pub fn import_unencrypted(
         &mut self,
         pk: PrivateKey,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
+    ) -> Result<GenerateAndImportResult, Error<E::Error>> {
         let p = pk.public_key();
         let encrypted = self.encrypt(&pk)?;
-        Ok((encrypted, p, self.0.keychain.import(pk)))
+        Ok(GenerateAndImportResult {
+            encrypted_private_key: encrypted,
+            public_key: p,
+            handle: self.0.keychain.import(pk),
+        })
     }
 
     pub fn generate<R: CryptoRngCore>(
         &self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey), Error<E::Error>> {
+    ) -> Result<GenerateResult, Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
         let encrypted = self.encrypt(&pk)?;
-        Ok((encrypted, p))
+        Ok(GenerateResult {
+            encrypted_private_key: encrypted,
+            public_key: p,
+        })
     }
 
     pub fn generate_and_import<R: CryptoRngCore>(
         &mut self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
+    ) -> Result<GenerateAndImportResult, Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
         let encrypted = self.encrypt(&pk)?;
-        Ok((encrypted, p, self.0.keychain.import(pk)))
+        Ok(GenerateAndImportResult {
+            encrypted_private_key: encrypted,
+            public_key: p,
+            handle: self.0.keychain.import(pk),
+        })
     }
 
     pub fn try_sign_with(&self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error<E::Error>> {
@@ -254,41 +291,55 @@ impl<E: AsyncEncryptionBackend> AsyncEncryptedSigner<E> {
         }
     }
 
-    pub async fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error<E::Error>> {
+    pub async fn import(&mut self, key_data: &[u8]) -> Result<ImportResult, Error<E::Error>> {
         let pk = self.decrypt(key_data).await?;
         let p = pk.public_key();
-        Ok((p, self.0.keychain.import(pk)))
+        Ok(ImportResult {
+            public_key: p,
+            handle: self.0.keychain.import(pk),
+        })
     }
 
     pub async fn import_unencrypted(
         &mut self,
         pk: PrivateKey,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
+    ) -> Result<GenerateAndImportResult, Error<E::Error>> {
         let p = pk.public_key();
         let encrypted = self.encrypt(&pk).await?;
-        Ok((encrypted, p, self.0.keychain.import(pk)))
+        Ok(GenerateAndImportResult {
+            encrypted_private_key: encrypted,
+            public_key: p,
+            handle: self.0.keychain.import(pk),
+        })
     }
 
     pub async fn generate<R: CryptoRngCore>(
         &self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey), Error<E::Error>> {
+    ) -> Result<GenerateResult, Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
         let encrypted = self.encrypt(&pk).await?;
-        Ok((encrypted, p))
+        Ok(GenerateResult {
+            encrypted_private_key: encrypted,
+            public_key: p,
+        })
     }
 
     pub async fn generate_and_import<R: CryptoRngCore>(
         &mut self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
+    ) -> Result<GenerateAndImportResult, Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
         let encrypted = self.encrypt(&pk).await?;
-        Ok((encrypted, p, self.0.keychain.import(pk)))
+        Ok(GenerateAndImportResult {
+            encrypted_private_key: encrypted,
+            public_key: p,
+            handle: self.0.keychain.import(pk),
+        })
     }
 
     pub async fn try_sign_with(
@@ -396,20 +447,22 @@ mod tests {
     #[test]
     fn signer_secp256k1() {
         let signer = EncryptedSigner::new(Passthrough);
-        let (pk_bytes, pub_key) = signer
+        let res = signer
             .generate(KeyType::Secp256k1, &mut rand_core::OsRng)
             .unwrap();
 
         let data = b"text";
         let sig = unwrap_as!(
-            signer.try_sign_with(&pk_bytes, data).unwrap(),
+            signer
+                .try_sign_with(&res.encrypted_private_key, data)
+                .unwrap(),
             Signature::Secp256k1
         );
 
         let mut digest = Blake2b256::new();
         digest.update(data);
 
-        unwrap_as!(pub_key, PublicKey::Secp256k1)
+        unwrap_as!(res.public_key, PublicKey::Secp256k1)
             .verify_digest(digest, &*sig)
             .unwrap();
     }
@@ -417,20 +470,22 @@ mod tests {
     #[test]
     fn signer_nist_p256() {
         let signer = EncryptedSigner::new(Passthrough);
-        let (pk_bytes, pub_key) = signer
+        let res = signer
             .generate(KeyType::NistP256, &mut rand_core::OsRng)
             .unwrap();
 
         let data = b"text";
         let sig = unwrap_as!(
-            signer.try_sign_with(&pk_bytes, data).unwrap(),
+            signer
+                .try_sign_with(&res.encrypted_private_key, data)
+                .unwrap(),
             Signature::NistP256
         );
 
         let mut digest = Blake2b256::new();
         digest.update(data);
 
-        unwrap_as!(pub_key, PublicKey::NistP256)
+        unwrap_as!(res.public_key, PublicKey::NistP256)
             .verify_digest(digest, &*sig)
             .unwrap();
     }
@@ -438,19 +493,21 @@ mod tests {
     #[test]
     fn signer_ed25519() {
         let signer = EncryptedSigner::new(Passthrough);
-        let (pk_bytes, pub_key) = signer
+        let res = signer
             .generate(KeyType::Ed25519, &mut rand_core::OsRng)
             .unwrap();
 
         let data = b"text";
         let sig = unwrap_as!(
-            signer.try_sign_with(&pk_bytes, data).unwrap(),
+            signer
+                .try_sign_with(&res.encrypted_private_key, data)
+                .unwrap(),
             Signature::Ed25519
         );
 
         let digest = Blake2b256::digest(data);
 
-        unwrap_as!(pub_key, PublicKey::Ed25519)
+        unwrap_as!(res.public_key, PublicKey::Ed25519)
             .verify(&digest, &sig)
             .unwrap();
     }
