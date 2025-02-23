@@ -57,7 +57,7 @@ mod tests {
             Error, Request,
         };
         use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
-        use crate::{macros::unwrap_as, SealedSigner};
+        use crate::{macros::unwrap_as, EncryptedSigner};
         use blake2::Digest;
         use signature::{DigestVerifier, Verifier};
         use std::os::unix::net::UnixStream;
@@ -77,7 +77,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                SealedSigner<Passthrough>,
+                EncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
@@ -86,11 +86,11 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).unwrap();
+                let (enc_pk, pub_key) = client.generate(KeyType::Secp256k1).unwrap();
 
                 let data = b"text";
                 let sig = unwrap_as!(
-                    client.try_sign_with(&sealed_pk, data).unwrap(),
+                    client.try_sign_with(&enc_pk, data).unwrap(),
                     Signature::Secp256k1
                 );
                 let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
@@ -106,7 +106,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                SealedSigner<Passthrough>,
+                EncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
@@ -115,11 +115,11 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (sealed_pk, pub_key) = client.generate(KeyType::Ed25519).unwrap();
+                let (enc_pk, pub_key) = client.generate(KeyType::Ed25519).unwrap();
 
                 let data = b"text";
                 let sig = unwrap_as!(
-                    client.try_sign_with(&sealed_pk, data).unwrap(),
+                    client.try_sign_with(&enc_pk, data).unwrap(),
                     Signature::Ed25519
                 );
                 let pub_key = unwrap_as!(pub_key, PublicKey::Ed25519);
@@ -134,7 +134,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                SealedSigner<Passthrough>,
+                EncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
@@ -143,13 +143,10 @@ mod tests {
                 let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
 
                 client.initialize(DummyCredentials {}).unwrap();
-                let (sealed_pk, pub_key) = client.generate(KeyType::Bls).unwrap();
+                let (enc_pk, pub_key) = client.generate(KeyType::Bls).unwrap();
 
                 let data = b"text";
-                let sig = unwrap_as!(
-                    client.try_sign_with(&sealed_pk, data).unwrap(),
-                    Signature::Bls
-                );
+                let sig = unwrap_as!(client.try_sign_with(&enc_pk, data).unwrap(), Signature::Bls);
                 let pub_key = unwrap_as!(pub_key, PublicKey::Bls);
                 pub_key.verify(data, &sig).unwrap();
             }
@@ -161,7 +158,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                SealedSigner<Passthrough>,
+                EncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
@@ -187,7 +184,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                SealedSigner<Passthrough>,
+                EncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
@@ -212,7 +209,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                SealedSigner<Passthrough>,
+                EncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
@@ -236,7 +233,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                SealedSigner<Passthrough>,
+                EncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
             let jh = thread::spawn(move || server.serve_connection(srv_sock).unwrap());
@@ -265,7 +262,7 @@ mod tests {
             Error,
         };
         use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
-        use crate::{macros::unwrap_as, AsyncSealedSigner};
+        use crate::{macros::unwrap_as, AsyncEncryptedSigner};
         use blake2::Digest;
         use signature::DigestVerifier;
         use tokio::net::UnixStream;
@@ -275,7 +272,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                AsyncSealedSigner<Passthrough>,
+                AsyncEncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
 
@@ -288,11 +285,11 @@ mod tests {
                 },
                 async move {
                     client.initialize(DummyCredentials {}).await.unwrap();
-                    let (sealed_pk, pub_key) = client.generate(KeyType::Secp256k1).await.unwrap();
+                    let (enc_pk, pub_key) = client.generate(KeyType::Secp256k1).await.unwrap();
 
                     let data = b"text";
                     let sig = unwrap_as!(
-                        client.try_sign_with(&sealed_pk, data).await.unwrap(),
+                        client.try_sign_with(&enc_pk, data).await.unwrap(),
                         Signature::Secp256k1
                     );
                     let pub_key = unwrap_as!(pub_key, PublicKey::Secp256k1);
@@ -308,7 +305,7 @@ mod tests {
             let (srv_sock, client_sock) = UnixStream::pair().unwrap();
             let mut server: Server<
                 PassthroughFactory,
-                AsyncSealedSigner<Passthrough>,
+                AsyncEncryptedSigner<Passthrough>,
                 rand_core::OsRng,
             > = Server::new(PassthroughFactory, rand_core::OsRng);
 

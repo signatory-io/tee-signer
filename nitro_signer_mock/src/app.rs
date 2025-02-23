@@ -1,6 +1,8 @@
 use nitro_signer::{
     rand_core,
-    signer_core::{rpc::server::Server, AsyncSealant, Sealant, SealantFactory},
+    signer_core::{
+        rpc::server::Server, AsyncEncryptionBackend, EncryptionBackend, EncryptionBackendFactory,
+    },
     tokio,
 };
 use serde::{Deserialize, Serialize};
@@ -30,16 +32,16 @@ impl std::fmt::Display for Error {
 #[derive(Debug)]
 struct Passthrough;
 
-impl Sealant for Passthrough {
+impl EncryptionBackend for Passthrough {
     type Error = Infallible;
 }
 
-impl AsyncSealant for Passthrough {
-    async fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+impl AsyncEncryptionBackend for Passthrough {
+    async fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(Vec::from(src))
     }
 
-    async fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn decrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(Vec::from(src))
     }
 }
@@ -49,7 +51,7 @@ struct DummyCredentials {} // serialized as empty object instead of null for uni
 
 struct PassthroughFactory;
 
-impl SealantFactory for PassthroughFactory {
+impl EncryptionBackendFactory for PassthroughFactory {
     type Output = Passthrough;
     type Credentials = DummyCredentials;
     fn try_new(&self, _cred: Self::Credentials) -> Result<Self::Output, Infallible> {

@@ -18,7 +18,7 @@ use const_oid::{
 };
 use rsa::{Oaep, RsaPrivateKey};
 use serde::{Deserialize, Serialize};
-use signer_core::{AsyncSealant, Sealant, SealantFactory};
+use signer_core::{AsyncEncryptionBackend, EncryptionBackend, EncryptionBackendFactory};
 use vsock::SocketAddr as VSockAddr;
 use zeroize::Zeroize;
 
@@ -55,14 +55,14 @@ impl ClientFactory {
     }
 }
 
-impl SealantFactory for ClientFactory {
+impl EncryptionBackendFactory for ClientFactory {
     type Output = Client;
     type Credentials = Credentials;
 
     fn try_new(
         &self,
         credentials: Self::Credentials,
-    ) -> Result<Self::Output, <Client as Sealant>::Error> {
+    ) -> Result<Self::Output, <Client as EncryptionBackend>::Error> {
         let cred = AWSCredentials::new(
             &credentials.access_key_id,
             &credentials.secret_access_key,
@@ -245,7 +245,7 @@ fn parse_enveloped_data(src: &[u8]) -> Result<ParsedEnvelopedData, Error> {
 
 #[derive(Debug)]
 pub enum Error {
-    Sdk(aws_sdk_kms::Error),
+    Kms(aws_sdk_kms::Error),
     Ber(ale::Error),
     ContentType(ObjectIdentifier),
     Algorithm(ObjectIdentifier),
@@ -263,7 +263,7 @@ where
     aws_sdk_kms::Error: From<SdkError<E, R>>,
 {
     fn from(value: SdkError<E, R>) -> Self {
-        Error::Sdk(value.into())
+        Error::Kms(value.into())
     }
 }
 
@@ -288,7 +288,7 @@ impl From<block_padding::UnpadError> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Sdk(error) => write!(f, "SDK error: {}", error),
+            Error::Kms(error) => write!(f, "KMS error: {}", error),
             Error::ZeroOutput => f.write_str("zero output"),
             Error::Ber(error) => write!(f, "BER error: {}", error),
             Error::ContentType(object_identifier) => {
@@ -309,12 +309,12 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-impl Sealant for Client {
+impl EncryptionBackend for Client {
     type Error = Error;
 }
 
-impl AsyncSealant for Client {
-    async fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+impl AsyncEncryptionBackend for Client {
+    async fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         let res = self
             .client
             .encrypt()
@@ -330,7 +330,7 @@ impl AsyncSealant for Client {
         }
     }
 
-    async fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    async fn decrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         let ri = RecipientInfo::builder()
             .attestation_document((&self.config.attestation_doc[..]).into())
             .key_encryption_algorithm(KeyEncryptionMechanism::RsaesOaepSha256)

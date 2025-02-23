@@ -1,7 +1,8 @@
 use crate::rpc::{Error as RPCError, Request, Result as RPCResult};
 use crate::{
-    AsyncSealant, AsyncSealedSigner, Error as SignerError, Sealant, SealantFactory, SealedSigner,
-    SyncSealant, TryFromCBOR, TryIntoCBOR,
+    AsyncEncryptedSigner, AsyncEncryptionBackend, EncryptedSigner, EncryptionBackend,
+    EncryptionBackendFactory, Error as SignerError, SyncEncryptionBackend, TryFromCBOR,
+    TryIntoCBOR,
 };
 use rand_core::CryptoRngCore;
 use serde::de::DeserializeOwned;
@@ -79,14 +80,14 @@ impl<F, S, R> Server<F, S, R> {
     }
 }
 
-impl<F, R> Server<F, SealedSigner<F::Output>, R>
+impl<F, R> Server<F, EncryptedSigner<F::Output>, R>
 where
-    F: SealantFactory,
-    F::Output: SyncSealant,
+    F: EncryptionBackendFactory,
+    F::Output: SyncEncryptionBackend,
     F::Credentials: DeserializeOwned,
     R: CryptoRngCore,
-    RPCError:
-        From<<F::Output as Sealant>::Error> + From<SignerError<<F::Output as Sealant>::Error>>,
+    RPCError: From<<F::Output as EncryptionBackend>::Error>
+        + From<SignerError<<F::Output as EncryptionBackend>::Error>>,
 {
     pub fn serve_connection<T: Read + Write>(&mut self, mut sock: T) -> Result<(), Error> {
         let mut buf = Vec::<u8>::new();
@@ -133,8 +134,8 @@ where
 
         match (req, &mut self.signer) {
             (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
-                Ok(sealant) => {
-                    self.signer = Some(sealant.into());
+                Ok(enc) => {
+                    self.signer = Some(enc.into());
                     RPCResult::<()>::Ok(())
                 }
                 Err(err) => RPCResult::<()>::Err(err.into()),
@@ -204,14 +205,14 @@ where
     }
 }
 
-impl<F, R> Server<F, AsyncSealedSigner<F::Output>, R>
+impl<F, R> Server<F, AsyncEncryptedSigner<F::Output>, R>
 where
-    F: SealantFactory,
-    F::Output: AsyncSealant,
+    F: EncryptionBackendFactory,
+    F::Output: AsyncEncryptionBackend,
     F::Credentials: DeserializeOwned,
     R: CryptoRngCore,
-    RPCError:
-        From<<F::Output as Sealant>::Error> + From<SignerError<<F::Output as Sealant>::Error>>,
+    RPCError: From<<F::Output as EncryptionBackend>::Error>
+        + From<SignerError<<F::Output as EncryptionBackend>::Error>>,
 {
     pub async fn serve_connection<T: AsyncRead + AsyncWrite + Unpin>(
         &mut self,
@@ -267,8 +268,8 @@ where
 
         match (req, &mut self.signer) {
             (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
-                Ok(sealant) => {
-                    self.signer = Some(sealant.into());
+                Ok(enc) => {
+                    self.signer = Some(enc.into());
                     RPCResult::<()>::Ok(())
                 }
                 Err(err) => RPCResult::<()>::Err(err.into()),

@@ -44,33 +44,33 @@ where
         ciborium::from_reader(src)
     }
 }
-pub trait SealantFactory {
-    type Output: Sealant;
+pub trait EncryptionBackendFactory {
+    type Output: EncryptionBackend;
     type Credentials;
 
     fn try_new(
         &self,
         cred: Self::Credentials,
-    ) -> Result<Self::Output, <Self::Output as Sealant>::Error>;
+    ) -> Result<Self::Output, <Self::Output as EncryptionBackend>::Error>;
 }
 
-pub trait Sealant: Sized {
+pub trait EncryptionBackend: Sized {
     type Error: std::error::Error + 'static;
 }
 
-pub trait SyncSealant: Sealant {
-    fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error>;
-    fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error>;
+pub trait SyncEncryptionBackend: EncryptionBackend {
+    fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    fn decrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
-pub trait AsyncSealant: Sealant {
-    fn seal(&self, src: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
-    fn unseal(&self, src: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
+pub trait AsyncEncryptionBackend: EncryptionBackend {
+    fn encrypt(&self, src: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
+    fn decrypt(&self, src: &[u8]) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
 }
 
 #[derive(Debug)]
 pub enum Error<S: std::error::Error> {
-    Sealant(S),
+    Encryption(S),
     Signer(crypto::Error),
     Serialize(ciborium::ser::Error<std::io::Error>),
     Deserialize(ciborium::de::Error<std::io::Error>),
@@ -79,7 +79,7 @@ pub enum Error<S: std::error::Error> {
 impl<S: std::error::Error> std::fmt::Display for Error<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Sealant(_) => f.write_str("sealant error"),
+            Error::Encryption(_) => f.write_str("encryption error"),
             Error::Signer(_) => f.write_str("signer error"),
             Error::Serialize(_) => f.write_str("serialization error"),
             Error::Deserialize(_) => f.write_str("deserialization error"),
@@ -90,7 +90,7 @@ impl<S: std::error::Error> std::fmt::Display for Error<S> {
 impl<S: std::error::Error + 'static> std::error::Error for Error<S> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Sealant(val) => Some(val),
+            Error::Encryption(val) => Some(val),
             Error::Signer(val) => Some(val),
             Error::Serialize(val) => Some(val),
             Error::Deserialize(val) => Some(val),
@@ -116,60 +116,60 @@ impl<S: std::error::Error> From<crypto::Error> for Error<S> {
     }
 }
 
-struct SealedSignerInner<S> {
+struct EncryptedSignerInner<E> {
     keychain: Keychain,
-    sealant: S,
+    enc: E,
 }
 
-impl<S: Sealant> SealedSignerInner<S> {
-    pub fn new(sealant: S) -> Self {
+impl<E: EncryptionBackend> EncryptedSignerInner<E> {
+    pub fn new(enc: E) -> Self {
         Self {
             keychain: Keychain::new(),
-            sealant,
+            enc,
         }
     }
 
-    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error<S::Error>> {
+    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error<E::Error>> {
         Ok(self.keychain.try_sign(handle, msg)?)
     }
 
-    pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<S::Error>> {
+    pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<E::Error>> {
         Ok(self.keychain.public_key(handle)?)
     }
 }
 
-pub struct SealedSigner<S>(SealedSignerInner<S>);
+pub struct EncryptedSigner<E>(EncryptedSignerInner<E>);
 
-impl<S: SyncSealant> SealedSigner<S> {
-    pub fn new(sealant: S) -> Self {
-        Self(SealedSignerInner::new(sealant))
+impl<E: SyncEncryptionBackend> EncryptedSigner<E> {
+    pub fn new(enc: E) -> Self {
+        Self(EncryptedSignerInner::new(enc))
     }
 
-    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error<S::Error>> {
+    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error<E::Error>> {
         self.0.try_sign(handle, msg)
     }
 
-    pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<S::Error>> {
+    pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<E::Error>> {
         self.0.public_key(handle)
     }
 
-    fn unseal(&self, src: &[u8]) -> Result<PrivateKey, Error<S::Error>> {
-        match self.0.sealant.unseal(src) {
-            Ok(unsealed) => Ok(PrivateKey::try_from_cbor(&unsealed[..])?),
-            Err(err) => return Err(Error::Sealant(err)),
+    fn decrypt(&self, src: &[u8]) -> Result<PrivateKey, Error<E::Error>> {
+        match self.0.enc.decrypt(src) {
+            Ok(decrypted) => Ok(PrivateKey::try_from_cbor(&decrypted[..])?),
+            Err(err) => return Err(Error::Encryption(err)),
         }
     }
 
-    fn seal(&self, pk: &PrivateKey) -> Result<Vec<u8>, Error<S::Error>> {
+    fn encrypt(&self, pk: &PrivateKey) -> Result<Vec<u8>, Error<E::Error>> {
         let buf = pk.try_into_cbor()?;
-        match self.0.sealant.seal(&buf) {
+        match self.0.enc.encrypt(&buf) {
             Ok(value) => Ok(value),
-            Err(err) => Err(Error::Sealant(err)),
+            Err(err) => Err(Error::Encryption(err)),
         }
     }
 
-    pub fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error<S::Error>> {
-        let pk = self.unseal(key_data)?;
+    pub fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error<E::Error>> {
+        let pk = self.decrypt(key_data)?;
         let p = pk.public_key();
         Ok((p, self.0.keychain.import(pk)))
     }
@@ -177,84 +177,84 @@ impl<S: SyncSealant> SealedSigner<S> {
     pub fn import_unencrypted(
         &mut self,
         pk: PrivateKey,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
         let p = pk.public_key();
-        let sealed = self.seal(&pk)?;
-        Ok((sealed, p, self.0.keychain.import(pk)))
+        let encrypted = self.encrypt(&pk)?;
+        Ok((encrypted, p, self.0.keychain.import(pk)))
     }
 
     pub fn generate<R: CryptoRngCore>(
         &self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey), Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
-        let sealed = self.seal(&pk)?;
-        Ok((sealed, p))
+        let encrypted = self.encrypt(&pk)?;
+        Ok((encrypted, p))
     }
 
     pub fn generate_and_import<R: CryptoRngCore>(
         &mut self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
-        let sealed = self.seal(&pk)?;
-        Ok((sealed, p, self.0.keychain.import(pk)))
+        let encrypted = self.encrypt(&pk)?;
+        Ok((encrypted, p, self.0.keychain.import(pk)))
     }
 
-    pub fn try_sign_with(&self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error<S::Error>> {
-        Ok(self.unseal(key_data)?.try_sign(msg)?)
+    pub fn try_sign_with(&self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error<E::Error>> {
+        Ok(self.decrypt(key_data)?.try_sign(msg)?)
     }
 
-    pub fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<S::Error>> {
-        Ok(self.unseal(key_data)?.public_key())
+    pub fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<E::Error>> {
+        Ok(self.decrypt(key_data)?.public_key())
     }
 }
 
-impl<S> From<S> for SealedSigner<S>
+impl<E> From<E> for EncryptedSigner<E>
 where
-    S: SyncSealant,
+    E: SyncEncryptionBackend,
 {
-    fn from(value: S) -> Self {
+    fn from(value: E) -> Self {
         Self::new(value)
     }
 }
 
-pub struct AsyncSealedSigner<S>(SealedSignerInner<S>);
+pub struct AsyncEncryptedSigner<E>(EncryptedSignerInner<E>);
 
-impl<S: AsyncSealant> AsyncSealedSigner<S> {
-    pub fn new(sealant: S) -> Self {
-        Self(SealedSignerInner::new(sealant))
+impl<E: AsyncEncryptionBackend> AsyncEncryptedSigner<E> {
+    pub fn new(enc: E) -> Self {
+        Self(EncryptedSignerInner::new(enc))
     }
 
-    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error<S::Error>> {
+    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error<E::Error>> {
         self.0.try_sign(handle, msg)
     }
 
-    pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<S::Error>> {
+    pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<E::Error>> {
         self.0.public_key(handle)
     }
 
-    async fn unseal(&self, src: &[u8]) -> Result<PrivateKey, Error<S::Error>> {
-        match self.0.sealant.unseal(src).await {
-            Ok(unsealed) => Ok(PrivateKey::try_from_cbor(&unsealed[..])?),
-            Err(err) => return Err(Error::Sealant(err)),
+    async fn decrypt(&self, src: &[u8]) -> Result<PrivateKey, Error<E::Error>> {
+        match self.0.enc.decrypt(src).await {
+            Ok(decrypted) => Ok(PrivateKey::try_from_cbor(&decrypted[..])?),
+            Err(err) => return Err(Error::Encryption(err)),
         }
     }
 
-    async fn seal(&self, pk: &PrivateKey) -> Result<Vec<u8>, Error<S::Error>> {
+    async fn encrypt(&self, pk: &PrivateKey) -> Result<Vec<u8>, Error<E::Error>> {
         let buf = pk.try_into_cbor()?;
-        match self.0.sealant.seal(&buf).await {
+        match self.0.enc.encrypt(&buf).await {
             Ok(value) => Ok(value),
-            Err(err) => Err(Error::Sealant(err)),
+            Err(err) => Err(Error::Encryption(err)),
         }
     }
 
-    pub async fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error<S::Error>> {
-        let pk = self.unseal(key_data).await?;
+    pub async fn import(&mut self, key_data: &[u8]) -> Result<(PublicKey, usize), Error<E::Error>> {
+        let pk = self.decrypt(key_data).await?;
         let p = pk.public_key();
         Ok((p, self.0.keychain.import(pk)))
     }
@@ -262,52 +262,52 @@ impl<S: AsyncSealant> AsyncSealedSigner<S> {
     pub async fn import_unencrypted(
         &mut self,
         pk: PrivateKey,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
         let p = pk.public_key();
-        let sealed = self.seal(&pk).await?;
-        Ok((sealed, p, self.0.keychain.import(pk)))
+        let encrypted = self.encrypt(&pk).await?;
+        Ok((encrypted, p, self.0.keychain.import(pk)))
     }
 
     pub async fn generate<R: CryptoRngCore>(
         &self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey), Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
-        let sealed = self.seal(&pk).await?;
-        Ok((sealed, p))
+        let encrypted = self.encrypt(&pk).await?;
+        Ok((encrypted, p))
     }
 
     pub async fn generate_and_import<R: CryptoRngCore>(
         &mut self,
         t: KeyType,
         r: &mut R,
-    ) -> Result<(Vec<u8>, PublicKey, usize), Error<S::Error>> {
+    ) -> Result<(Vec<u8>, PublicKey, usize), Error<E::Error>> {
         let pk = PrivateKey::generate(t, r)?;
         let p = pk.public_key();
-        let sealed = self.seal(&pk).await?;
-        Ok((sealed, p, self.0.keychain.import(pk)))
+        let encrypted = self.encrypt(&pk).await?;
+        Ok((encrypted, p, self.0.keychain.import(pk)))
     }
 
     pub async fn try_sign_with(
         &self,
         key_data: &[u8],
         msg: &[u8],
-    ) -> Result<Signature, Error<S::Error>> {
-        Ok(self.unseal(key_data).await?.try_sign(msg)?)
+    ) -> Result<Signature, Error<E::Error>> {
+        Ok(self.decrypt(key_data).await?.try_sign(msg)?)
     }
 
-    pub async fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<S::Error>> {
-        Ok(self.unseal(key_data).await?.public_key())
+    pub async fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<E::Error>> {
+        Ok(self.decrypt(key_data).await?.public_key())
     }
 }
 
-impl<S> From<S> for AsyncSealedSigner<S>
+impl<E> From<E> for AsyncEncryptedSigner<E>
 where
-    S: AsyncSealant,
+    E: AsyncEncryptionBackend,
 {
-    fn from(value: S) -> Self {
+    fn from(value: E) -> Self {
         Self::new(value)
     }
 }
@@ -335,14 +335,17 @@ pub(crate) mod macros {
 mod tests {
     use crate::crypto::{Blake2b256, PublicKey, Signature};
     use crate::macros::unwrap_as;
-    use crate::{AsyncSealant, KeyType, Sealant, SealantFactory, SealedSigner, SyncSealant};
+    use crate::{
+        AsyncEncryptionBackend, EncryptedSigner, EncryptionBackend, EncryptionBackendFactory,
+        KeyType, SyncEncryptionBackend,
+    };
     use blake2::Digest;
     use serde::{Deserialize, Serialize};
     use signature::{DigestVerifier, Verifier};
 
     pub(crate) struct PassthroughFactory;
 
-    impl SealantFactory for PassthroughFactory {
+    impl EncryptionBackendFactory for PassthroughFactory {
         type Output = Passthrough;
         type Credentials = DummyCredentials;
         fn try_new(&self, _cred: Self::Credentials) -> Result<Self::Output, DummyErr> {
@@ -365,33 +368,33 @@ mod tests {
 
     impl std::error::Error for DummyErr {}
 
-    impl Sealant for Passthrough {
+    impl EncryptionBackend for Passthrough {
         type Error = DummyErr;
     }
 
-    impl SyncSealant for Passthrough {
-        fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    impl SyncEncryptionBackend for Passthrough {
+        fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
             Ok(Vec::from(src))
         }
 
-        fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        fn decrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
             Ok(Vec::from(src))
         }
     }
 
-    impl AsyncSealant for Passthrough {
-        async fn seal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    impl AsyncEncryptionBackend for Passthrough {
+        async fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
             Ok(Vec::from(src))
         }
 
-        async fn unseal(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        async fn decrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
             Ok(Vec::from(src))
         }
     }
 
     #[test]
     fn signer_secp256k1() {
-        let signer = SealedSigner::new(Passthrough);
+        let signer = EncryptedSigner::new(Passthrough);
         let (pk_bytes, pub_key) = signer
             .generate(KeyType::Secp256k1, &mut rand_core::OsRng)
             .unwrap();
@@ -412,7 +415,7 @@ mod tests {
 
     #[test]
     fn signer_nist_p256() {
-        let signer = SealedSigner::new(Passthrough);
+        let signer = EncryptedSigner::new(Passthrough);
         let (pk_bytes, pub_key) = signer
             .generate(KeyType::NistP256, &mut rand_core::OsRng)
             .unwrap();
@@ -433,7 +436,7 @@ mod tests {
 
     #[test]
     fn signer_ed25519() {
-        let signer = SealedSigner::new(Passthrough);
+        let signer = EncryptedSigner::new(Passthrough);
         let (pk_bytes, pub_key) = signer
             .generate(KeyType::Ed25519, &mut rand_core::OsRng)
             .unwrap();
