@@ -1,7 +1,7 @@
 use crate::nsm::{self, NSM};
 use nitro_signer::{
     aws_config,
-    kms_client::{self, ClientFactory, EncryptionAlgorithmSpec},
+    kms_client::{self, ClientFactory},
     rand_core, rsa, tokio, vsock, Server,
 };
 use std::{io, sync::Arc};
@@ -55,10 +55,9 @@ pub const DEFAULT_VSOCK_PORT: u32 = 2000;
 
 #[derive(Debug)]
 pub struct Config {
-    pub algorithm_spec: Option<EncryptionAlgorithmSpec>,
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
-    pub region: String,
+    pub region: Option<String>,
     pub endpoint: Option<String>,
     pub listen_port: Option<u32>,
 }
@@ -84,7 +83,6 @@ impl App {
     pub async fn run(self) -> Result<(), Error> {
         let client_conf = kms_client::Config {
             attestation_doc: self.attestation_doc,
-            algorithm_spec: self.conf.algorithm_spec,
             proxy_port: self.conf.proxy_port,
             proxy_cid: self.conf.proxy_cid,
             region: self.conf.region,

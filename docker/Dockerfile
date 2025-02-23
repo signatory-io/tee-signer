@@ -36,7 +36,7 @@ FROM scratch
 
 COPY --from=builder /rootfs /
 
-ARG REGION
+ARG REGION=us-west-2
 ARG PROXY_PORT
 ARG PROXY_CID
 ARG LISTEN_PORT

@@ -33,10 +33,9 @@ pub struct Credentials {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub attestation_doc: Vec<u8>,
-    pub algorithm_spec: Option<EncryptionAlgorithmSpec>,
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
-    pub region: String,
+    pub region: Option<String>,
     pub endpoint: Option<String>,
     pub client_key: RsaPrivateKey,
 }
@@ -75,7 +74,7 @@ impl EncryptionBackendFactory for ClientFactory {
             .sdk_config
             .to_builder()
             .credentials_provider(SharedCredentialsProvider::new(cred))
-            .region(Region::new(self.config.region.clone()))
+            .region(self.config.region.clone().map(Region::new))
             .http_client(vsock_proxy_client::build(VSockAddr::new(
                 self.config.proxy_cid.unwrap_or(DEFAULT_VSOCK_PROXY_CID),
                 self.config.proxy_port.unwrap_or(DEFAULT_VSOCK_PROXY_PORT),
@@ -321,7 +320,6 @@ impl AsyncEncryptionBackend for Client {
             .encrypt()
             .plaintext(src.into())
             .set_key_id(Some(self.encryption_key_id.clone()))
-            .set_encryption_algorithm(self.config.algorithm_spec.clone())
             .send()
             .await?;
 
@@ -341,7 +339,6 @@ impl AsyncEncryptionBackend for Client {
             .client
             .decrypt()
             .ciphertext_blob(src.into())
-            .set_encryption_algorithm(self.config.algorithm_spec.clone())
             .recipient(ri)
             .send()
             .await?;
