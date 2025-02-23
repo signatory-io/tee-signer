@@ -245,7 +245,7 @@ fn parse_enveloped_data(src: &[u8]) -> Result<ParsedEnvelopedData, Error> {
 
 #[derive(Debug)]
 pub enum Error {
-    Kms(aws_sdk_kms::Error),
+    Sdk(Box<dyn std::error::Error + Send + Sync + 'static>),
     Ber(ale::Error),
     ContentType(ObjectIdentifier),
     Algorithm(ObjectIdentifier),
@@ -260,10 +260,11 @@ pub enum Error {
 
 impl<E, R> From<SdkError<E, R>> for Error
 where
-    aws_sdk_kms::Error: From<SdkError<E, R>>,
+    E: std::error::Error + Send + Sync + 'static,
+    R: std::fmt::Debug + Send + Sync + 'static,
 {
     fn from(value: SdkError<E, R>) -> Self {
-        Error::Kms(value.into())
+        Error::Sdk(Box::new(value))
     }
 }
 
@@ -288,7 +289,7 @@ impl From<block_padding::UnpadError> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Kms(error) => write!(f, "KMS error: {}", error),
+            Error::Sdk(error) => write!(f, "SDK error: {}", error),
             Error::ZeroOutput => f.write_str("zero output"),
             Error::Ber(error) => write!(f, "BER error: {}", error),
             Error::ContentType(object_identifier) => {
