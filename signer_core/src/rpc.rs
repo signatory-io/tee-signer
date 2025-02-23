@@ -22,6 +22,7 @@ pub enum Request<C> {
     SignWith {
         #[serde(with = "bytes")]
         key_data: Vec<u8>,
+        #[serde(with = "bytes")]
         msg: Vec<u8>,
     },
     PublicKey(usize),
