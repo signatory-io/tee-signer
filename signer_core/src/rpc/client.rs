@@ -5,7 +5,6 @@ use crate::rpc::{
 };
 use crate::{TryFromCBOR, TryIntoCBOR};
 use serde::Serialize;
-use std::io::{Read, Write};
 use std::marker::PhantomData;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -54,14 +53,18 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-struct Inner<T, C> {
+pub struct Client<T, C> {
     socket: T,
     buf: Vec<u8>,
     w_buf: Vec<u8>,
     _phantom: PhantomData<C>,
 }
 
-impl<T, C> Inner<T, C> {
+impl<T, C> Client<T, C>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+    C: Serialize,
+{
     pub fn new(sock: T) -> Self {
         Self {
             socket: sock,
@@ -69,103 +72,6 @@ impl<T, C> Inner<T, C> {
             w_buf: Vec::new(),
             _phantom: PhantomData,
         }
-    }
-}
-
-pub struct Client<T, C>(Inner<T, C>);
-
-impl<T, C> Client<T, C>
-where
-    T: Read + Write,
-    C: Serialize,
-{
-    pub fn new(sock: T) -> Self {
-        Self(Inner::new(sock))
-    }
-
-    fn round_trip<R>(&mut self, req: Request<C>) -> Result<R, Error>
-    where
-        R: TryFromCBOR,
-        Request<C>: TryIntoCBOR,
-        RPCResult<R>: TryFromCBOR,
-        Error:
-            From<<Request<C> as TryIntoCBOR>::Error> + From<<RPCResult<R> as TryFromCBOR>::Error>,
-    {
-        self.0.buf.clear();
-        req.try_into_writer(&mut self.0.buf)?;
-        let len = u32::try_from(self.0.buf.len()).unwrap().to_be_bytes();
-
-        self.0.w_buf.clear();
-        self.0.w_buf.extend_from_slice(&len);
-        self.0.w_buf.extend_from_slice(&self.0.buf);
-        self.0.socket.write_all(&self.0.w_buf)?;
-
-        let mut len_buf: [u8; 4] = [0; 4];
-        self.0.socket.read_exact(&mut len_buf)?;
-        let len = u32::from_be_bytes(len_buf);
-
-        self.0.buf.resize(len as usize, 0);
-        self.0.socket.read_exact(&mut self.0.buf)?;
-
-        let res = RPCResult::<R>::try_from_cbor(&self.0.buf)?;
-        Ok(res?)
-    }
-
-    pub fn initialize(&mut self, cred: C) -> Result<(), Error> {
-        self.round_trip::<()>(Request::Initialize(cred))
-    }
-
-    pub fn import(&mut self, key_data: &[u8]) -> Result<ImportResult, Error> {
-        self.round_trip::<ImportResult>(Request::Import(key_data.into()))
-    }
-
-    pub fn import_unencrypted(
-        &mut self,
-        private_key: &PrivateKey,
-    ) -> Result<GenerateAndImportResult, Error> {
-        self.round_trip::<GenerateAndImportResult>(Request::ImportUnencrypted(private_key.clone()))
-    }
-
-    pub fn generate(&mut self, t: KeyType) -> Result<GenerateResult, Error> {
-        self.round_trip::<GenerateResult>(Request::Generate(t))
-    }
-
-    pub fn generate_and_import(&mut self, t: KeyType) -> Result<GenerateAndImportResult, Error> {
-        self.round_trip::<GenerateAndImportResult>(Request::GenerateAndImport(t))
-    }
-
-    pub fn try_sign(&mut self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
-        self.round_trip::<Signature>(Request::Sign {
-            handle: handle,
-            message: msg.into(),
-        })
-    }
-
-    pub fn try_sign_with(&mut self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error> {
-        self.round_trip::<Signature>(Request::SignWith {
-            encrypted_private_key: key_data.into(),
-            message: msg.into(),
-        })
-    }
-
-    pub fn public_key(&mut self, handle: usize) -> Result<PublicKey, Error> {
-        self.round_trip::<PublicKey>(Request::PublicKey(handle))
-    }
-
-    pub fn public_key_from(&mut self, key_data: &[u8]) -> Result<PublicKey, Error> {
-        self.round_trip::<PublicKey>(Request::PublicKeyFrom(key_data.into()))
-    }
-}
-
-pub struct AsyncClient<T, C>(Inner<T, C>);
-
-impl<T, C> AsyncClient<T, C>
-where
-    T: AsyncRead + AsyncWrite + Unpin,
-    C: Serialize,
-{
-    pub fn new(sock: T) -> Self {
-        Self(Inner::new(sock))
     }
 
     async fn round_trip<R>(&mut self, req: Request<C>) -> Result<R, Error>
@@ -176,23 +82,23 @@ where
         Error:
             From<<Request<C> as TryIntoCBOR>::Error> + From<<RPCResult<R> as TryFromCBOR>::Error>,
     {
-        self.0.buf.clear();
-        req.try_into_writer(&mut self.0.buf)?;
-        let len = u32::try_from(self.0.buf.len()).unwrap().to_be_bytes();
+        self.buf.clear();
+        req.try_into_writer(&mut self.buf)?;
+        let len = u32::try_from(self.buf.len()).unwrap().to_be_bytes();
 
-        self.0.w_buf.clear();
-        self.0.w_buf.extend_from_slice(&len);
-        self.0.w_buf.extend_from_slice(&self.0.buf);
-        self.0.socket.write_all(&self.0.w_buf).await?;
+        self.w_buf.clear();
+        self.w_buf.extend_from_slice(&len);
+        self.w_buf.extend_from_slice(&self.buf);
+        self.socket.write_all(&self.w_buf).await?;
 
         let mut len_buf: [u8; 4] = [0; 4];
-        self.0.socket.read_exact(&mut len_buf).await?;
+        self.socket.read_exact(&mut len_buf).await?;
         let len = u32::from_be_bytes(len_buf);
 
-        self.0.buf.resize(len as usize, 0);
-        self.0.socket.read_exact(&mut self.0.buf).await?;
+        self.buf.resize(len as usize, 0);
+        self.socket.read_exact(&mut self.buf).await?;
 
-        let res = RPCResult::<R>::try_from_cbor(&self.0.buf)?;
+        let res = RPCResult::<R>::try_from_cbor(&self.buf)?;
         Ok(res?)
     }
 

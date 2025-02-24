@@ -1,8 +1,6 @@
 use nitro_signer::{
     rand_core,
-    signer_core::{
-        rpc::server::Server, AsyncEncryptionBackend, EncryptionBackend, EncryptionBackendFactory,
-    },
+    signer_core::{rpc::server::Server, EncryptionBackend, EncryptionBackendFactory},
     tokio,
 };
 use serde::{Deserialize, Serialize};
@@ -34,9 +32,7 @@ struct Passthrough;
 
 impl EncryptionBackend for Passthrough {
     type Error = Infallible;
-}
 
-impl AsyncEncryptionBackend for Passthrough {
     async fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(Vec::from(src))
     }

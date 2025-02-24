@@ -18,7 +18,7 @@ use const_oid::{
 };
 use rsa::{Oaep, RsaPrivateKey};
 use serde::{Deserialize, Serialize};
-use signer_core::{AsyncEncryptionBackend, EncryptionBackend, EncryptionBackendFactory};
+use signer_core::{EncryptionBackend, EncryptionBackendFactory};
 use vsock::SocketAddr as VSockAddr;
 use zeroize::Zeroize;
 
@@ -320,9 +320,7 @@ impl std::error::Error for Error {
 
 impl EncryptionBackend for Client {
     type Error = Error;
-}
 
-impl AsyncEncryptionBackend for Client {
     async fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         let res = self
             .client
