@@ -288,9 +288,9 @@ impl From<block_padding::UnpadError> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Sdk(error) => write!(f, "SDK error: {}", error),
+            Error::Sdk(_) => f.write_str("SDK error"),
             Error::ZeroOutput => f.write_str("zero output"),
-            Error::Ber(error) => write!(f, "BER error: {}", error),
+            Error::Ber(_) => f.write_str("BER error"),
             Error::ContentType(object_identifier) => {
                 write!(f, "unexpected content type: {}", object_identifier)
             }
@@ -299,7 +299,7 @@ impl std::fmt::Display for Error {
                 write!(f, "unexpected encryption algorithm: {}", object_identifier)
             }
             Error::MissingData => f.write_str("some data is missing"),
-            Error::Rsa(error) => write!(f, "RSA error: {}", error),
+            Error::Rsa(_) => f.write_str("RSA error"),
             Error::KeySize(v) => write!(f, "invalid key size: {}", v),
             Error::IvSize(v) => write!(f, "invalid iv size: {}", v),
             Error::Unpad => f.write_str("unpad error"),
@@ -307,7 +307,16 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Sdk(error) => Some(error.as_ref()),
+            Error::Ber(error) => Some(error),
+            Error::Rsa(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 impl EncryptionBackend for Client {
     type Error = Error;
