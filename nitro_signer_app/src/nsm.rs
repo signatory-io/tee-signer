@@ -1,6 +1,7 @@
 pub use aws_nitro_enclaves_nsm_api::api::{ErrorCode, Request, Response};
 use aws_nitro_enclaves_nsm_api::driver::{nsm_init, nsm_process_request};
 use nitro_signer::{
+    kms_client::Attester,
     rand_core::{CryptoRng, RngCore},
     rsa::{
         self,
@@ -84,7 +85,7 @@ impl From<spki::Error> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::IO(error) => write!(f, "IO error: {}", error),
+            Error::IO(_) => f.write_str("IO error"),
             Error::NSM(error_code) => match error_code {
                 ErrorCode::Success => f.write_str("NSM error: success"),
                 ErrorCode::InvalidArgument => f.write_str("NSM error: invalid argument"),
@@ -96,23 +97,32 @@ impl std::fmt::Display for Error {
                 ErrorCode::InputTooLarge => f.write_str("NSM error: input too large"),
                 ErrorCode::InternalError => f.write_str("NSM error: internal error"),
             },
-            Error::SPKI(error) => write!(f, "SPKI error: {}", error),
+            Error::SPKI(_) => f.write_str("SPKI error"),
             Error::ResponseType => f.write_str("wrong response type"),
         }
     }
 }
 
-impl std::error::Error for Error {}
-
-pub struct SharedRng(Arc<NSM>);
-
-impl SharedRng {
-    pub fn new(nsm: Arc<NSM>) -> Self {
-        Self(nsm)
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::IO(error) => Some(error),
+            Error::SPKI(error) => Some(error),
+            _ => None,
+        }
     }
 }
 
-impl RngCore for SharedRng {
+#[derive(Clone)]
+pub struct SharedNSM(Arc<NSM>);
+
+impl SharedNSM {
+    pub fn new(nsm: NSM) -> Self {
+        Self(Arc::new(nsm))
+    }
+}
+
+impl RngCore for SharedNSM {
     fn next_u32(&mut self) -> u32 {
         rand_core::impls::next_u32_via_fill(self)
     }
@@ -140,7 +150,14 @@ impl RngCore for SharedRng {
     }
 }
 
-impl CryptoRng for SharedRng {}
+impl CryptoRng for SharedNSM {}
+
+impl Attester for SharedNSM {
+    type Error = Error;
+    fn attest(&self, pk: &rsa::RsaPublicKey) -> Result<Vec<u8>, Self::Error> {
+        self.0.attest(None, None, Some(pk))
+    }
+}
 
 const RNDADDENTROPY: libc::c_ulong = 0x40085203;
 

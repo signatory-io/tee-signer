@@ -16,7 +16,7 @@ use const_oid::{
     },
     ObjectIdentifier,
 };
-use rsa::{Oaep, RsaPrivateKey};
+use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use signer_core::{EncryptionBackend, EncryptionBackendFactory};
 use vsock::SocketAddr as VSockAddr;
@@ -30,9 +30,13 @@ pub struct Credentials {
     pub encryption_key_id: String,
 }
 
+pub trait Attester {
+    type Error: std::error::Error + 'static;
+    fn attest(&self, pk: &RsaPublicKey) -> Result<Vec<u8>, Self::Error>;
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub attestation_doc: Vec<u8>,
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
     pub region: Option<String>,
@@ -43,25 +47,33 @@ pub struct Config {
 pub const DEFAULT_VSOCK_PROXY_PORT: u32 = 8000;
 pub const DEFAULT_VSOCK_PROXY_CID: u32 = 3;
 
-pub struct ClientFactory {
+pub struct ClientFactory<A> {
     sdk_config: aws_config::SdkConfig,
     config: Config,
+    attester: A,
 }
 
-impl ClientFactory {
-    pub fn new(config: Config, sdk_config: SdkConfig) -> Self {
-        Self { sdk_config, config }
+impl<A> ClientFactory<A> {
+    pub fn new(config: Config, sdk_config: SdkConfig, attester: A) -> Self {
+        Self {
+            sdk_config,
+            config,
+            attester,
+        }
     }
 }
 
-impl EncryptionBackendFactory for ClientFactory {
-    type Output = Client;
+impl<A> EncryptionBackendFactory for ClientFactory<A>
+where
+    A: Attester + Clone + Send + Sync,
+{
+    type Output = Client<A>;
     type Credentials = Credentials;
 
     fn try_new(
         &self,
         credentials: Self::Credentials,
-    ) -> Result<Self::Output, <Client as EncryptionBackend>::Error> {
+    ) -> Result<Self::Output, <Client<A> as EncryptionBackend>::Error> {
         let cred = AWSCredentials::new(
             &credentials.access_key_id,
             &credentials.secret_access_key,
@@ -89,14 +101,16 @@ impl EncryptionBackendFactory for ClientFactory {
             config: self.config.clone(),
             encryption_key_id: credentials.encryption_key_id,
             client: KMSClient::new(&conf),
+            attester: self.attester.clone(),
         })
     }
 }
 
-pub struct Client {
+pub struct Client<A> {
     client: KMSClient,
     config: Config,
     encryption_key_id: String,
+    attester: A,
 }
 
 #[derive(Debug)]
@@ -110,7 +124,7 @@ struct ParsedEnvelopedData {
 const ENVELOPED_DATA_VERSION: u8 = 2;
 const ENVELOPED_DATA_RECIPIENT_VERSION: u8 = 2;
 
-fn parse_enveloped_data(src: &[u8]) -> Result<ParsedEnvelopedData, Error> {
+fn parse_enveloped_data<A>(src: &[u8]) -> Result<ParsedEnvelopedData, Error<A>> {
     use ale::ExpectSome;
     let mut stream = ale::Stream::new(src);
 
@@ -243,7 +257,8 @@ fn parse_enveloped_data(src: &[u8]) -> Result<ParsedEnvelopedData, Error> {
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub enum Error<A> {
+    Attestation(A),
     Sdk(Box<dyn std::error::Error + Send + Sync + 'static>),
     Ber(ale::Error),
     ContentType(ObjectIdentifier),
@@ -257,7 +272,7 @@ pub enum Error {
     Unpad,
 }
 
-impl<E, R> From<SdkError<E, R>> for Error
+impl<A, E, R> From<SdkError<E, R>> for Error<A>
 where
     E: std::error::Error + Send + Sync + 'static,
     R: std::fmt::Debug + Send + Sync + 'static,
@@ -267,27 +282,31 @@ where
     }
 }
 
-impl From<ale::Error> for Error {
+impl<A> From<ale::Error> for Error<A> {
     fn from(value: ale::Error) -> Self {
         Error::Ber(value)
     }
 }
 
-impl From<rsa::Error> for Error {
+impl<A> From<rsa::Error> for Error<A> {
     fn from(value: rsa::Error) -> Self {
         Error::Rsa(value)
     }
 }
 
-impl From<block_padding::UnpadError> for Error {
+impl<A> From<block_padding::UnpadError> for Error<A> {
     fn from(_: block_padding::UnpadError) -> Self {
         Error::Unpad
     }
 }
 
-impl std::fmt::Display for Error {
+impl<A> std::fmt::Display for Error<A>
+where
+    A: std::error::Error,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::Attestation(_) => f.write_str("attestation error"),
             Error::Sdk(_) => f.write_str("SDK error"),
             Error::ZeroOutput => f.write_str("zero output"),
             Error::Ber(_) => f.write_str("BER error"),
@@ -307,9 +326,13 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {
+impl<A> std::error::Error for Error<A>
+where
+    A: std::error::Error + 'static,
+{
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Error::Attestation(error) => Some(error),
             Error::Sdk(error) => Some(error.as_ref()),
             Error::Ber(error) => Some(error),
             Error::Rsa(error) => Some(error),
@@ -318,8 +341,11 @@ impl std::error::Error for Error {
     }
 }
 
-impl EncryptionBackend for Client {
-    type Error = Error;
+impl<A> EncryptionBackend for Client<A>
+where
+    A: Attester + Send + Sync,
+{
+    type Error = Error<A::Error>;
 
     async fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
         let res = self
@@ -337,8 +363,16 @@ impl EncryptionBackend for Client {
     }
 
     async fn decrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        let attestation_doc = match self
+            .attester
+            .attest(&self.config.client_key.to_public_key())
+        {
+            Ok(v) => v,
+            Err(err) => return Err(Error::Attestation(err)),
+        };
+
         let ri = RecipientInfo::builder()
-            .attestation_document((&self.config.attestation_doc[..]).into())
+            .attestation_document(attestation_doc.into())
             .key_encryption_algorithm(KeyEncryptionMechanism::RsaesOaepSha256)
             .build();
 
@@ -362,7 +396,10 @@ impl EncryptionBackend for Client {
 
 type Aes256Cbc = cbc::Decryptor<aes::Aes256>;
 
-fn decrypt_cfr(data: &ParsedEnvelopedData, client_key: &RsaPrivateKey) -> Result<Vec<u8>, Error> {
+fn decrypt_cfr<A>(
+    data: &ParsedEnvelopedData,
+    client_key: &RsaPrivateKey,
+) -> Result<Vec<u8>, Error<A>> {
     let mut cipher_key = client_key.decrypt(Oaep::new::<sha2::Sha256>(), &data.cipher_key)?;
 
     if cipher_key.len() != Aes256Cbc::key_size() {
@@ -385,6 +422,7 @@ fn parse_and_decrypt() {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
     use rsa::pkcs1::DecodeRsaPrivateKey;
+    use std::convert::Infallible;
 
     const RSA_KEY: &str = "-----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEAwg8xlWTIwm44aLEqiA5lweHUSm2eeKwrTg3qEUhOVyGAo3eN
@@ -418,7 +456,7 @@ cJEGAbCDYhyjvtjBLNy7YDQ1hdmCnqMxg/5AIwUMkvTTRg+qepfboA==
     const CIPHER_TEXT_STR: &str = "MIAGCSqGSIb3DQEHA6CAMIACAQIxggFrMIIBZwIBAoAgljGgxlmRCtWqvB/s/Aw+ZNTDlc6Uka86SLVmlNmFGAMwPAYJKoZIhvcNAQEHMC+gDzANBglghkgBZQMEAgEFAKEcMBoGCSqGSIb3DQEBCDANBglghkgBZQMEAgEFAASCAQAXmjTiHpg+OcYaf2ISaDNpQcEOq61Sm3re3v+5z2hZPe8eoUGhmMS6pCuC+BRW7RpkjwDaXQzzR/jExnraEET3lj9oyAMMwKIahhHHIZ33qOTq1c/9NtMVZmm/j4UfyCpP8WMAFb2hvwIJbjnAGO9Xbw+NzWaQdvEyNDGUX+bPIuSDc75jjGH5KtdFLopk5k6nsTdU26qLkVE6Mg9Y//s0OJCvmYFgfw15IXDb50xJupWxCwbqGXWmfTBEo9M9AhelVbOXkitZR7hbnT6BZnsfpS2acZRNL4XxC+gg4Ml9fOiYsGWqSK8Lkwlp22rtL70CIHnggbb+oIE4ObR4TV8qMIAGCSqGSIb3DQEHATAdBglghkgBZQMEASoEEEMr/6uiZK+CzgfJvr61JTGggAQwfp0W0Q/QPYmg6AoC3DkE5+beNswVOX9ct5IIgIsvaAhTF9IiHdbX7yLa8YS2WQ/FAAAAAAAAAAAAAA==";
     let cipher_text = STANDARD.decode(CIPHER_TEXT_STR).unwrap();
 
-    let data = parse_enveloped_data(&cipher_text).unwrap();
+    let data = parse_enveloped_data::<Infallible>(&cipher_text).unwrap();
     assert_eq!(
         data,
         ParsedEnvelopedData {
@@ -449,7 +487,7 @@ cJEGAbCDYhyjvtjBLNy7YDQ1hdmCnqMxg/5AIwUMkvTTRg+qepfboA==
     );
 
     let private_key = rsa::RsaPrivateKey::from_pkcs1_pem(RSA_KEY).unwrap();
-    let result = decrypt_cfr(&data, &private_key).unwrap();
+    let result = decrypt_cfr::<Infallible>(&data, &private_key).unwrap();
     assert_eq!(
         result,
         vec![

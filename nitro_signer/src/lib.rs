@@ -8,9 +8,9 @@ pub use vsock;
 
 pub mod kms_client;
 
-pub type Server<R> = signer_core::rpc::server::Server<
-    kms_client::ClientFactory,
-    EncryptedSigner<kms_client::Client>,
+pub type Server<R, A> = signer_core::rpc::server::Server<
+    kms_client::ClientFactory<A>,
+    EncryptedSigner<kms_client::Client<A>>,
     R,
 >;
 

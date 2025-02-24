@@ -1,16 +1,15 @@
-use crate::nsm::{self, NSM};
+use crate::nsm::{self, SharedNSM};
 use nitro_signer::{
     aws_config,
     kms_client::{self, ClientFactory},
-    rand_core, rsa, tokio, vsock, Server,
+    rsa, tokio, vsock, Server,
 };
-use std::{io, sync::Arc};
+use std::io;
 
 pub struct App {
     priv_key: rsa::RsaPrivateKey,
-    attestation_doc: Vec<u8>,
     conf: Config,
-    secm: Arc<NSM>,
+    secm: SharedNSM,
 }
 
 #[derive(Debug)]
@@ -67,22 +66,18 @@ impl App {
         let secm = nsm::NSM::open()?;
         nsm::seed_rng(&secm, nsm::DEFAULT_ENTROPY_BYTE_SZ)?;
 
-        let priv_key = rsa::RsaPrivateKey::new(&mut rand_core::OsRng, RSA_BITS)?;
-        let pub_key = priv_key.to_public_key();
-
-        let attestation_doc = secm.attest(None, None, Some(&pub_key))?;
+        let mut shared_sm = SharedNSM::new(secm);
+        let priv_key = rsa::RsaPrivateKey::new(&mut shared_sm, RSA_BITS)?;
 
         Ok(Self {
             priv_key,
-            attestation_doc,
             conf,
-            secm: Arc::new(secm),
+            secm: shared_sm,
         })
     }
 
     pub async fn run(self) -> Result<(), Error> {
         let client_conf = kms_client::Config {
-            attestation_doc: self.attestation_doc,
             proxy_port: self.conf.proxy_port,
             proxy_cid: self.conf.proxy_cid,
             region: self.conf.region,
@@ -101,11 +96,11 @@ impl App {
             println!("incoming connection from {}", addr);
 
             let ccfg = client_conf.clone();
-            let rng = nsm::SharedRng::new(self.secm.clone());
+            let secm = self.secm.clone();
 
             tokio::spawn(async move {
-                let cf = ClientFactory::new(ccfg, aws_config::load_from_env().await);
-                let mut srv = Server::new(cf, rng);
+                let cf = ClientFactory::new(ccfg, aws_config::load_from_env().await, secm.clone());
+                let mut srv = Server::new(cf, secm);
 
                 if let Err(err) = srv.serve_connection(conn).await {
                     eprintln!("{}", err);
