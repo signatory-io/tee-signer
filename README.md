@@ -55,5 +55,4 @@ Additionally [Signatory](https://github.com/ecadlabs/signatory) `nitro` backend 
 
 ## RPC Protocol
 
-See [ the document](doc/rpc.md)
-
+See [the document](doc/rpc.md)
