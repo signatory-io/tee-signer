@@ -21,6 +21,7 @@ Build args:
 | PROXY_PORT  | 8000    | VSock proxy listening port                                   |
 | PROXY_CID   | 3       | Context ID of an instance running a VSock proxy. 3 is a parent instance |
 | LISTEN_PORT | 2000    | Signer listening port                                        |
+| RELEASE     |         | Set non empty to build an optimized production version       |
 
 This builds a minimalistic image based on Docker's `scratch`  to fit into Nitro's strict memory requirements. The image contains almost nothing but the binary itself and a few runtime libraries.
 
