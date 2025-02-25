@@ -10,14 +10,14 @@ The description is given in an improvised DSL.
 
 ## Response format
 
-```
+```text
 Response<Result> = {
-	(Ok: Result) | (Err: Error),
+    (Ok: Result) | (Err: Error),
 }
 
 Error = {
-	message: string,
-  source?: Error,
+    message: string,
+    source?: Error,
 }
 ```
 
@@ -25,19 +25,19 @@ Error = {
 
 ### Initialize
 
-This is the first request sent by the client. It's used to provide all information to initialise the encryption engine (KMS in this case).
+This is the first request sent by the client. It's used to provide all information to initialize the encryption engine (KMS in this case).
 
-```
+```text
 InitializeRequest = {
-  Initialize: Credentials,
+    Initialize: Credentials,
 }
 
 Credentials = {
-  access_key_id: string,
-  secret_access_key: string,
-  session_token?: string,
-  encryption_key_id: string,
-  region: string,
+    access_key_id: string,
+    secret_access_key: string,
+    session_token?: string,
+    encryption_key_id: string,
+    region: string,
 }
 
 InitializeResult = null
@@ -47,18 +47,18 @@ InitializeResult = null
 
 Used to import the encrypted private key that is stored on the host side.
 
-```
+```text
 ImportRequest = {
-  Import: bytes,
+    Import: bytes,
 }
 
 PublicKey = {
-  (Secp256k1 | NistP256 | Ed25519 | Bls): bytes,
+    (Secp256k1 | NistP256 | Ed25519 | Bls): bytes,
 }
 
 ImportResult = {
-	public_key: PublicKey,
-  handle: unsigned,
+    public_key: PublicKey,
+    handle: unsigned,
 }
 ```
 
@@ -68,13 +68,13 @@ The private key will be decrypted, stored in the session-local in-memory storage
 
 A less secure way to get the private key into the enclave.
 
-```
+```text
 ImportUnencryptedRequest = {
-  ImportUnencrypted: PrivateKey,
+    ImportUnencrypted: PrivateKey,
 }
 
 PrivateKey = {
-	(Secp256k1 | NistP256 | Ed25519 | Bls): bytes,
+    (Secp256k1 | NistP256 | Ed25519 | Bls): bytes,
 }
 
 ImportUnencryptedResult = GenerateAndImportResult
@@ -84,16 +84,16 @@ ImportUnencryptedResult = GenerateAndImportResult
 
 Used to generate a new private key without storing it.
 
-```
+```text
 GenerateRequest = {
-  Generate: KeyType,
+    Generate: KeyType,
 }
 
 KeyType = "Secp256k1" | "NistP256" | "Ed25519" | "Bls"
 
 GenerateResult = {
-	encrypted_private_key: bytes,
-	public_key: PublicKey,
+    encrypted_private_key: bytes,
+    public_key: PublicKey,
 }
 ```
 
@@ -101,15 +101,15 @@ GenerateResult = {
 
 Generate a new private key and store it in the session-local in-memory storage.
 
-```
+```text
 GenerateAndImportRequest = {
-  GenerateAndImport: KeyType,
+    GenerateAndImport: KeyType,
 }
 
 GenerateAndImportResult = {
-	encrypted_private_key: bytes,
-	public_key: PublicKey,
-	handle: unsigned,
+    encrypted_private_key: bytes,
+    public_key: PublicKey,
+    handle: unsigned,
 }
 ```
 
@@ -117,12 +117,12 @@ GenerateAndImportResult = {
 
 Sign the message with the key stored under the specified index.
 
-```
+```text
 SignRequest = {
-	Sign: {
-		handle: unsigned,
-		message: bytes,
-	},
+    Sign: {
+        handle: unsigned,
+        message: bytes,
+    },
 }
 
 Signature = {
@@ -132,16 +132,16 @@ Signature = {
 SignResult = Signature
 ```
 
-### SignWith 
+### SignWith
 
 Sign the message with the provided encrypted private key.
 
-```
+```text
 SignWithRequest = {
-	SignWith: {
-		encrypted_private_key: bytes,
-		message: bytes,
-	}
+    SignWith: {
+        encrypted_private_key: bytes,
+        message: bytes,
+    }
 }
 
 SignWithResult = Signature
@@ -151,9 +151,9 @@ SignWithResult = Signature
 
 Return the public key corresponding to the key pair stored under the given index.
 
-```
+```text
 PublicKeyRequest = {
-	PublicKey: unsigned,
+    PublicKey: unsigned,
 }
 
 PublicKeyResult = PublicKey
@@ -163,9 +163,9 @@ PublicKeyResult = PublicKey
 
 Derive and return the public key corresponding to the given encrypted private key.
 
-```
+```text
 PublicKeyFromRequest = {
-	PublicKeyFrom: bytes,
+    PublicKeyFrom: bytes,
 }
 
 PublicKeyFromResult = PublicKey
