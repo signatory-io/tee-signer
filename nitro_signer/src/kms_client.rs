@@ -28,6 +28,7 @@ pub struct Credentials {
     pub secret_access_key: String,
     pub session_token: Option<String>,
     pub encryption_key_id: String,
+    pub region: String,
 }
 
 pub trait Attester {
@@ -39,7 +40,6 @@ pub trait Attester {
 pub struct Config {
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
-    pub region: Option<String>,
     pub endpoint: Option<String>,
     pub client_key: RsaPrivateKey,
 }
@@ -86,7 +86,7 @@ where
             .sdk_config
             .to_builder()
             .credentials_provider(SharedCredentialsProvider::new(cred))
-            .region(self.config.region.clone().map(Region::new))
+            .region(Some(Region::new(credentials.region)))
             .http_client(vsock_proxy_client::build(VSockAddr::new(
                 self.config.proxy_cid.unwrap_or(DEFAULT_VSOCK_PROXY_CID),
                 self.config.proxy_port.unwrap_or(DEFAULT_VSOCK_PROXY_PORT),

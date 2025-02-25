@@ -12,7 +12,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|s| s.parse().ok())
             .flatten(),
         proxy_cid: env::var("PROXY_CID").ok().map(|s| s.parse().ok()).flatten(),
-        region: env::var("REGION").ok(),
         endpoint: env::var("ENDPOINT").ok(),
         listen_port: env::var("LISTEN_PORT")
             .ok()

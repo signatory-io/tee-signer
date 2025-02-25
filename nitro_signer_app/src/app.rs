@@ -56,7 +56,6 @@ pub const DEFAULT_VSOCK_PORT: u32 = 2000;
 pub struct Config {
     pub proxy_port: Option<u32>,
     pub proxy_cid: Option<u32>,
-    pub region: Option<String>,
     pub endpoint: Option<String>,
     pub listen_port: Option<u32>,
 }
@@ -80,7 +79,6 @@ impl App {
         let client_conf = kms_client::Config {
             proxy_port: self.conf.proxy_port,
             proxy_cid: self.conf.proxy_cid,
-            region: self.conf.region,
             endpoint: self.conf.endpoint,
             client_key: self.priv_key,
         };
