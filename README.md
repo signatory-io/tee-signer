@@ -11,7 +11,7 @@ For prerequisites refer to [kmstool setup procedure](https://github.com/aws/aws-
 From the root of this repo run:
 
 ```sh
-docker build -f docker/nitro_signer.Dockerfile -t nitro-signer .
+docker build -f docker/nitro_signer.Dockerfile -t nitro-signer --build-arg RELEASE=1 .
 ```
 
 Build args:
