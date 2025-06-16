@@ -86,11 +86,14 @@ where
             .sdk_config
             .to_builder()
             .credentials_provider(SharedCredentialsProvider::new(cred))
-            .region(Some(Region::new(credentials.region)))
             .http_client(vsock_proxy_client::build(VSockAddr::new(
                 self.config.proxy_cid.unwrap_or(DEFAULT_VSOCK_PROXY_CID),
                 self.config.proxy_port.unwrap_or(DEFAULT_VSOCK_PROXY_PORT),
             )));
+
+        if credentials.region != "" {
+            builder = builder.region(Some(Region::new(credentials.region)));
+        }
 
         if let Some(ep) = &self.config.endpoint {
             builder.set_endpoint_url(Some(ep.clone()));
