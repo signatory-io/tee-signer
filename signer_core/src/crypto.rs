@@ -26,6 +26,13 @@ pub trait Random: Sized {
     fn random<R: CryptoRngCore>(rng: &mut R) -> Result<Self, Self::Error>;
 }
 
+pub trait ProofOfPossession {
+    type Proof;
+    type Error;
+
+    fn try_prove(&self) -> Result<Self::Proof, Self::Error>;
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum KeyType {
     Secp256k1,
@@ -154,6 +161,18 @@ impl KeyPair for PrivateKey {
     }
 }
 
+impl ProofOfPossession for PrivateKey {
+    type Proof = Signature;
+    type Error = Error;
+
+    fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
+        match self {
+            PrivateKey::Bls(val) => Ok(val.try_prove().unwrap().into()),
+            _ => Err(Error::InvalidHandle),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PublicKey {
     Secp256k1(ecdsa::VerifyingKey<Secp256k1>),
@@ -191,6 +210,7 @@ pub enum Error {
     InvalidHandle,
     Signature(SignatureError),
     Bls(bls::Error),
+    PopUnsupported,
 }
 
 impl std::fmt::Display for Error {
@@ -199,6 +219,7 @@ impl std::fmt::Display for Error {
             Error::InvalidHandle => f.write_str("invalid handle"),
             Error::Signature(_) => f.write_str("signature error"),
             Error::Bls(_) => f.write_str("BLST error"),
+            Error::PopUnsupported => f.write_str("Proof of possession is not supported"),
         }
     }
 }
@@ -242,6 +263,13 @@ impl Keychain {
     pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
         match self.keys.get(handle) {
             Some(k) => Ok(k.try_sign(msg)?),
+            None => Err(Error::InvalidHandle),
+        }
+    }
+
+    pub fn try_prove(&self, handle: usize) -> Result<Signature, Error> {
+        match self.keys.get(handle) {
+            Some(k) => Ok(k.try_prove()?),
             None => Err(Error::InvalidHandle),
         }
     }

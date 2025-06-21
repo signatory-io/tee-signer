@@ -219,6 +219,12 @@ where
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(())),
+
+            (Request::ProofOfPossession { handle }, Some(signer)) => signer
+                .try_prove(handle)
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(())),
         }
         .map_err(Into::into)
     }

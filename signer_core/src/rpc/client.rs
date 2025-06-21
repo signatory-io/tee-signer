@@ -157,4 +157,9 @@ where
         self.round_trip::<PublicKey>(Request::PublicKeyFrom(key_data.into()))
             .await
     }
+
+    pub async fn proof_of_possession(&mut self, handle: usize) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::ProofOfPossession { handle: handle })
+            .await
+    }
 }

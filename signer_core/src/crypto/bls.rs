@@ -1,5 +1,5 @@
 use crate::{
-    crypto::{CryptoRngCore, Deserialize, KeyPair, Random, Serialize, Verifier},
+    crypto::{CryptoRngCore, Deserialize, KeyPair, ProofOfPossession, Random, Serialize, Verifier},
     serde_helper,
 };
 use blst::min_pk;
@@ -7,6 +7,7 @@ pub use blst::BLST_ERROR;
 use std::convert::Infallible;
 
 const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
+const BLS_POP: &[u8] = b"BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 
 #[derive(Debug, Clone)]
 pub struct Signature(min_pk::Signature);
@@ -118,6 +119,16 @@ impl KeyPair for SigningKey {
     fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
         let aug = self.sk_to_pk().to_bytes();
         Ok(Signature(self.sign(msg, BLS_DST, &aug)))
+    }
+}
+
+impl ProofOfPossession for SigningKey {
+    type Proof = Signature;
+    type Error = Infallible;
+
+    fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
+        let pk = self.sk_to_pk().to_bytes();
+        Ok(Signature(self.sign(&pk, BLS_POP, &[])))
     }
 }
 

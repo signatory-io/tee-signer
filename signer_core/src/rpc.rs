@@ -28,6 +28,9 @@ pub enum Request<C> {
     },
     PublicKey(usize),
     PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
+    ProofOfPossession {
+        handle: usize,
+    },
 }
 
 /// Wire-compatible error object
@@ -71,7 +74,7 @@ mod tests {
     use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
     use crate::{macros::unwrap_as, EncryptedSigner};
     use blake2::Digest;
-    use signature::DigestVerifier;
+    use signature::{DigestVerifier, Verifier};
     use tokio::net::UnixStream;
 
     #[tokio::test]
@@ -127,6 +130,33 @@ mod tests {
                         source: None
                     }
                 );
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_proof_of_possession() {
+        let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+        let mut server: Server<PassthroughFactory, EncryptedSigner<Passthrough>, rand_core::OsRng> =
+            Server::new(PassthroughFactory, rand_core::OsRng);
+
+        let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+
+        futures::join!(
+            async move {
+                server.serve_connection(srv_sock).await.unwrap();
+            },
+            async move {
+                client.initialize(DummyCredentials {}).await.unwrap();
+                let res = client.generate_and_import(KeyType::Bls).await.unwrap();
+
+                let proof = unwrap_as!(
+                    client.proof_of_possession(res.handle).await.unwrap(),
+                    Signature::Bls
+                );
+
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Bls);
+                pub_key.verify(&pub_key.to_bytes(), &proof).unwrap();
             }
         );
     }

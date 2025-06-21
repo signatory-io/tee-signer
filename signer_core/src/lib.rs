@@ -154,6 +154,10 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
         Ok(self.keychain.public_key(handle)?)
     }
 
+    pub fn try_prove(&self, handle: usize) -> Result<Signature, Error<E::Error>> {
+        Ok(self.keychain.try_prove(handle)?)
+    }
+
     async fn decrypt(&self, src: &[u8]) -> Result<PrivateKey, Error<E::Error>> {
         match self.enc.decrypt(src).await {
             Ok(decrypted) => Ok(PrivateKey::try_from_cbor(&decrypted[..])?),
