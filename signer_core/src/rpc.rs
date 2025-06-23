@@ -28,7 +28,7 @@ pub enum Request<C> {
     },
     PublicKey(usize),
     PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
-    ProofOfPossession {
+    ProvePossession {
         handle: usize,
     },
 }
