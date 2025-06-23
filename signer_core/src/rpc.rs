@@ -28,9 +28,7 @@ pub enum Request<C> {
     },
     PublicKey(usize),
     PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
-    ProvePossession {
-        handle: usize,
-    },
+    ProvePossession(usize),
 }
 
 /// Wire-compatible error object

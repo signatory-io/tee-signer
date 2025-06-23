@@ -159,7 +159,7 @@ where
     }
 
     pub async fn proof_of_possession(&mut self, handle: usize) -> Result<Signature, Error> {
-        self.round_trip::<Signature>(Request::ProvePossession { handle: handle })
+        self.round_trip::<Signature>(Request::ProvePossession(handle))
             .await
     }
 }
