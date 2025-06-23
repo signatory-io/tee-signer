@@ -168,7 +168,7 @@ impl ProofOfPossession for PrivateKey {
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
         match self {
             PrivateKey::Bls(val) => Ok(val.try_prove().unwrap().into()),
-            _ => Err(Error::InvalidHandle),
+            _ => Err(Error::PopUnsupported),
         }
     }
 }
