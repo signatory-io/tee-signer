@@ -6,8 +6,8 @@ use blst::min_pk;
 pub use blst::BLST_ERROR;
 use std::convert::Infallible;
 
-const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
-const BLS_POP: &[u8] = b"BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
+const BLS_SIG_CIPHER_SUITE: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
+const BLS_POP_CIPHER_SUITE: &[u8] = b"BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 
 #[derive(Debug, Clone)]
 pub struct Signature(min_pk::Signature);
@@ -55,7 +55,10 @@ impl core::ops::Deref for PublicKey {
 impl Verifier<Signature> for PublicKey {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
         let aug = self.to_bytes();
-        match signature.0.verify(true, msg, BLS_DST, &aug, self, true) {
+        match signature
+            .0
+            .verify(true, msg, BLS_SIG_CIPHER_SUITE, &aug, self, true)
+        {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
             err => {
                 let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
@@ -118,7 +121,7 @@ impl KeyPair for SigningKey {
 
     fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
         let aug = self.sk_to_pk().to_bytes();
-        Ok(Signature(self.sign(msg, BLS_DST, &aug)))
+        Ok(Signature(self.sign(msg, BLS_SIG_CIPHER_SUITE, &aug)))
     }
 }
 
@@ -128,7 +131,7 @@ impl PossessionProver for SigningKey {
 
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
         let pk = self.sk_to_pk().to_bytes();
-        Ok(Signature(self.sign(&pk, BLS_POP, &[])))
+        Ok(Signature(self.sign(&pk, BLS_POP_CIPHER_SUITE, &[])))
     }
 }
 
