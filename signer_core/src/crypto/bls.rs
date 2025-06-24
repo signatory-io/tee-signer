@@ -1,5 +1,5 @@
 use crate::{
-    crypto::{CryptoRngCore, Deserialize, KeyPair, ProofOfPossession, Random, Serialize, Verifier},
+    crypto::{CryptoRngCore, Deserialize, KeyPair, PossessionProver, Random, Serialize, Verifier},
     serde_helper,
 };
 use blst::min_pk;
@@ -122,7 +122,7 @@ impl KeyPair for SigningKey {
     }
 }
 
-impl ProofOfPossession for SigningKey {
+impl PossessionProver for SigningKey {
     type Proof = Signature;
     type Error = Infallible;
 

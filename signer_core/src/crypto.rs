@@ -26,7 +26,7 @@ pub trait Random: Sized {
     fn random<R: CryptoRngCore>(rng: &mut R) -> Result<Self, Self::Error>;
 }
 
-pub trait ProofOfPossession {
+pub trait PossessionProver {
     type Proof;
     type Error;
 
@@ -161,7 +161,7 @@ impl KeyPair for PrivateKey {
     }
 }
 
-impl ProofOfPossession for PrivateKey {
+impl PossessionProver for PrivateKey {
     type Proof = Signature;
     type Error = Error;
 
