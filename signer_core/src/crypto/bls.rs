@@ -9,7 +9,7 @@ use blst::min_pk;
 pub use blst::BLST_ERROR;
 use std::convert::Infallible;
 
-const BLS_SIG_CIPHER_SUITE: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
+const BLS_SIG_CIPHER_SUITE: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 const BLS_POP_CIPHER_SUITE: &[u8] = b"BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 
 #[derive(Debug, Clone)]
