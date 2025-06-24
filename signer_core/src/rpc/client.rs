@@ -6,7 +6,7 @@ use crate::rpc::{
 use crate::{TryFromCBOR, TryIntoCBOR};
 use serde::Serialize;
 use std::marker::PhantomData;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug)]
 pub enum Error {
@@ -62,7 +62,7 @@ pub struct Client<T, C> {
 
 impl<T, C> Client<T, C>
 where
-    T: AsyncRead + AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWriteExt + Unpin,
     C: Serialize,
 {
     pub fn new(sock: T) -> Self {
