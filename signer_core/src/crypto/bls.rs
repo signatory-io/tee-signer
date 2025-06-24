@@ -1,5 +1,8 @@
 use crate::{
-    crypto::{CryptoRngCore, Deserialize, KeyPair, PossessionProver, Random, Serialize, Verifier},
+    crypto::{
+        CryptoRngCore, Deserialize, KeyPair, PossessionProver, ProofVerifier, Random, Serialize,
+        Verifier,
+    },
     serde_helper,
 };
 use blst::min_pk;
@@ -42,6 +45,39 @@ impl<'de> Deserialize<'de> for Signature {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ProofOfPossession(min_pk::Signature);
+
+impl core::ops::Deref for ProofOfPossession {
+    type Target = min_pk::Signature;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// use compressed form for serialization
+impl Serialize for ProofOfPossession {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(&self.0.compress())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProofOfPossession {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes = deserializer.deserialize_bytes(serde_helper::ByteArrayVisitor::<96>::new())?;
+        match min_pk::Signature::uncompress(&bytes) {
+            Ok(val) => Ok(ProofOfPossession(val)),
+            Err(err) => Err(serde::de::Error::custom(Error::from(err))),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PublicKey(min_pk::PublicKey);
 
@@ -59,6 +95,25 @@ impl Verifier<Signature> for PublicKey {
             .0
             .verify(true, msg, BLS_SIG_CIPHER_SUITE, &aug, self, true)
         {
+            blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
+            err => {
+                let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
+                Err(b.into())
+            }
+        }
+    }
+}
+
+impl ProofVerifier<ProofOfPossession> for PublicKey {
+    fn verify_pop(&self, proof: &ProofOfPossession) -> Result<(), signature::Error> {
+        match proof.0.verify(
+            true,
+            &self.to_bytes(),
+            BLS_POP_CIPHER_SUITE,
+            &[],
+            self,
+            true,
+        ) {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
             err => {
                 let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
@@ -126,12 +181,12 @@ impl KeyPair for SigningKey {
 }
 
 impl PossessionProver for SigningKey {
-    type Proof = Signature;
+    type Proof = ProofOfPossession;
     type Error = Infallible;
 
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
         let pk = self.sk_to_pk().to_bytes();
-        Ok(Signature(self.sign(&pk, BLS_POP_CIPHER_SUITE, &[])))
+        Ok(ProofOfPossession(self.sign(&pk, BLS_POP_CIPHER_SUITE, &[])))
     }
 }
 

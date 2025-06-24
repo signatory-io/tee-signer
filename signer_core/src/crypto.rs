@@ -73,6 +73,21 @@ impl From<bls::Signature> for Signature {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ProofOfPossession {
+    Bls(bls::ProofOfPossession),
+}
+
+impl From<bls::ProofOfPossession> for ProofOfPossession {
+    fn from(value: bls::ProofOfPossession) -> Self {
+        ProofOfPossession::Bls(value)
+    }
+}
+
+pub trait ProofVerifier<S> {
+    fn verify_pop(&self, proof: &S) -> Result<(), signature::Error>;
+}
+
 pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
 
 impl KeyPair for ed25519_dalek::SigningKey {
@@ -162,7 +177,7 @@ impl KeyPair for PrivateKey {
 }
 
 impl PossessionProver for PrivateKey {
-    type Proof = Signature;
+    type Proof = ProofOfPossession;
     type Error = Error;
 
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
@@ -267,7 +282,7 @@ impl Keychain {
         }
     }
 
-    pub fn try_prove(&self, handle: usize) -> Result<Signature, Error> {
+    pub fn try_prove(&self, handle: usize) -> Result<ProofOfPossession, Error> {
         match self.keys.get(handle) {
             Some(k) => Ok(k.try_prove()?),
             None => Err(Error::InvalidHandle),
