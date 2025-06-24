@@ -300,7 +300,11 @@ impl Keychain {
 #[cfg(test)]
 mod tests {
     use super::{Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature};
-    use crate::{crypto::KeyPair, macros::unwrap_as, TryFromCBOR, TryIntoCBOR};
+    use crate::{
+        crypto::{KeyPair, ProofOfPossession, ProofVerifier},
+        macros::unwrap_as,
+        TryFromCBOR, TryIntoCBOR,
+    };
     use signature::{DigestVerifier, Verifier};
 
     macro_rules! impl_pk_serde_test {
@@ -421,5 +425,17 @@ mod tests {
         let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
 
         pub_key.verify(data, &sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_bls_pop() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
+        let sig = unwrap_as!(keychain.try_prove(handle).unwrap(), ProofOfPossession::Bls);
+
+        pub_key.verify_pop(&sig).unwrap();
     }
 }
