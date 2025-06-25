@@ -90,10 +90,10 @@ impl core::ops::Deref for PublicKey {
 
 impl Verifier<Signature> for PublicKey {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
-        let aug = self.to_bytes();
+        let cipher_suite: Vec<u8> = CipherSuite::Signature(2, Scheme::ProofOfPossession).into();
         match signature
             .0
-            .verify(true, msg, BLS_SIG_CIPHER_SUITE, &aug, self, true)
+            .verify(true, msg, &cipher_suite, &[], self, true)
         {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
             err => {
@@ -175,8 +175,7 @@ impl KeyPair for SigningKey {
     }
 
     fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
-        let aug = self.sk_to_pk().to_bytes();
-        Ok(Signature(self.sign(msg, BLS_SIG_CIPHER_SUITE, &aug)))
+        Ok(Signature(self.sign(msg, BLS_SIG_CIPHER_SUITE, &[])))
     }
 }
 
