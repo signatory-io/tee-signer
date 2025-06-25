@@ -6,7 +6,7 @@ use crate::{
 use rand_core::CryptoRngCore;
 use serde::de::DeserializeOwned;
 use std::io;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[derive(Debug)]
 pub enum StateError {
@@ -88,7 +88,7 @@ where
     RPCError: From<<F::Output as EncryptionBackend>::Error>
         + From<SignerError<<F::Output as EncryptionBackend>::Error>>,
 {
-    pub async fn serve_connection<T: AsyncRead + AsyncWrite + Unpin>(
+    pub async fn serve_connection<T: AsyncWrite + AsyncReadExt + Unpin>(
         &mut self,
         mut sock: T,
     ) -> Result<(), Error> {
@@ -216,6 +216,12 @@ where
             (Request::PublicKeyFrom(key_data), Some(signer)) => signer
                 .public_key_from(&key_data)
                 .await
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(())),
+
+            (Request::ProvePossession(handle), Some(signer)) => signer
+                .try_prove(handle)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(())),

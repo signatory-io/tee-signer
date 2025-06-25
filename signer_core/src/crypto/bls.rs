@@ -1,12 +1,16 @@
 use crate::{
-    crypto::{CryptoRngCore, Deserialize, KeyPair, Random, Serialize, Verifier},
+    crypto::{
+        CryptoRngCore, Deserialize, KeyPair, PossessionProver, ProofVerifier, Random, Serialize,
+        Verifier,
+    },
     serde_helper,
 };
 use blst::min_pk;
 pub use blst::BLST_ERROR;
 use std::convert::Infallible;
 
-const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_AUG_";
+const BLS_SIG_CIPHER_SUITE: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
+const BLS_POP_CIPHER_SUITE: &[u8] = b"BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 
 #[derive(Debug, Clone)]
 pub struct Signature(min_pk::Signature);
@@ -41,6 +45,39 @@ impl<'de> Deserialize<'de> for Signature {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ProofOfPossession(min_pk::Signature);
+
+impl core::ops::Deref for ProofOfPossession {
+    type Target = min_pk::Signature;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// use compressed form for serialization
+impl Serialize for ProofOfPossession {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(&self.0.compress())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProofOfPossession {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes = deserializer.deserialize_bytes(serde_helper::ByteArrayVisitor::<96>::new())?;
+        match min_pk::Signature::uncompress(&bytes) {
+            Ok(val) => Ok(ProofOfPossession(val)),
+            Err(err) => Err(serde::de::Error::custom(Error::from(err))),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PublicKey(min_pk::PublicKey);
 
@@ -53,8 +90,29 @@ impl core::ops::Deref for PublicKey {
 
 impl Verifier<Signature> for PublicKey {
     fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
-        let aug = self.to_bytes();
-        match signature.0.verify(true, msg, BLS_DST, &aug, self, true) {
+        match signature
+            .0
+            .verify(true, msg, BLS_SIG_CIPHER_SUITE, &[], self, true)
+        {
+            blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
+            err => {
+                let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
+                Err(b.into())
+            }
+        }
+    }
+}
+
+impl ProofVerifier<ProofOfPossession> for PublicKey {
+    fn verify_pop(&self, proof: &ProofOfPossession) -> Result<(), signature::Error> {
+        match proof.0.verify(
+            true,
+            &self.to_bytes(),
+            BLS_POP_CIPHER_SUITE,
+            &[],
+            self,
+            true,
+        ) {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
             err => {
                 let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
@@ -116,8 +174,17 @@ impl KeyPair for SigningKey {
     }
 
     fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
-        let aug = self.sk_to_pk().to_bytes();
-        Ok(Signature(self.sign(msg, BLS_DST, &aug)))
+        Ok(Signature(self.sign(msg, BLS_SIG_CIPHER_SUITE, &[])))
+    }
+}
+
+impl PossessionProver for SigningKey {
+    type Proof = ProofOfPossession;
+    type Error = Infallible;
+
+    fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
+        let pk = self.sk_to_pk().to_bytes();
+        Ok(ProofOfPossession(self.sign(&pk, BLS_POP_CIPHER_SUITE, &[])))
     }
 }
 

@@ -28,6 +28,7 @@ pub enum Request<C> {
     },
     PublicKey(usize),
     PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
+    ProvePossession(usize),
 }
 
 /// Wire-compatible error object
@@ -71,7 +72,7 @@ mod tests {
     use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
     use crate::{macros::unwrap_as, EncryptedSigner};
     use blake2::Digest;
-    use signature::DigestVerifier;
+    use signature::{DigestVerifier, Verifier};
     use tokio::net::UnixStream;
 
     #[tokio::test]

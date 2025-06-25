@@ -1,4 +1,4 @@
-use crypto::{KeyPair, KeyType, Keychain, PrivateKey, PublicKey, Signature};
+use crypto::{KeyPair, KeyType, Keychain, PrivateKey, ProofOfPossession, PublicKey, Signature};
 use rand_core::CryptoRngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::future::Future;
@@ -152,6 +152,10 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
 
     pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<E::Error>> {
         Ok(self.keychain.public_key(handle)?)
+    }
+
+    pub fn try_prove(&self, handle: usize) -> Result<ProofOfPossession, Error<E::Error>> {
+        Ok(self.keychain.try_prove(handle)?)
     }
 
     async fn decrypt(&self, src: &[u8]) -> Result<PrivateKey, Error<E::Error>> {

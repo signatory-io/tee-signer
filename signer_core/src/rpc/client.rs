@@ -6,7 +6,7 @@ use crate::rpc::{
 use crate::{TryFromCBOR, TryIntoCBOR};
 use serde::Serialize;
 use std::marker::PhantomData;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug)]
 pub enum Error {
@@ -62,7 +62,7 @@ pub struct Client<T, C> {
 
 impl<T, C> Client<T, C>
 where
-    T: AsyncRead + AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWriteExt + Unpin,
     C: Serialize,
 {
     pub fn new(sock: T) -> Self {
@@ -155,6 +155,11 @@ where
 
     pub async fn public_key_from(&mut self, key_data: &[u8]) -> Result<PublicKey, Error> {
         self.round_trip::<PublicKey>(Request::PublicKeyFrom(key_data.into()))
+            .await
+    }
+
+    pub async fn proof_of_possession(&mut self, handle: usize) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::ProvePossession(handle))
             .await
     }
 }

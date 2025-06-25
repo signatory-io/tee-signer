@@ -26,6 +26,13 @@ pub trait Random: Sized {
     fn random<R: CryptoRngCore>(rng: &mut R) -> Result<Self, Self::Error>;
 }
 
+pub trait PossessionProver {
+    type Proof;
+    type Error;
+
+    fn try_prove(&self) -> Result<Self::Proof, Self::Error>;
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum KeyType {
     Secp256k1,
@@ -64,6 +71,21 @@ impl From<bls::Signature> for Signature {
     fn from(value: bls::Signature) -> Self {
         Signature::Bls(value)
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ProofOfPossession {
+    Bls(bls::ProofOfPossession),
+}
+
+impl From<bls::ProofOfPossession> for ProofOfPossession {
+    fn from(value: bls::ProofOfPossession) -> Self {
+        ProofOfPossession::Bls(value)
+    }
+}
+
+pub trait ProofVerifier<S> {
+    fn verify_pop(&self, proof: &S) -> Result<(), signature::Error>;
 }
 
 pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
@@ -154,6 +176,18 @@ impl KeyPair for PrivateKey {
     }
 }
 
+impl PossessionProver for PrivateKey {
+    type Proof = ProofOfPossession;
+    type Error = Error;
+
+    fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
+        match self {
+            PrivateKey::Bls(val) => Ok(val.try_prove().unwrap().into()),
+            _ => Err(Error::PopUnsupported),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PublicKey {
     Secp256k1(ecdsa::VerifyingKey<Secp256k1>),
@@ -191,6 +225,7 @@ pub enum Error {
     InvalidHandle,
     Signature(SignatureError),
     Bls(bls::Error),
+    PopUnsupported,
 }
 
 impl std::fmt::Display for Error {
@@ -199,6 +234,7 @@ impl std::fmt::Display for Error {
             Error::InvalidHandle => f.write_str("invalid handle"),
             Error::Signature(_) => f.write_str("signature error"),
             Error::Bls(_) => f.write_str("BLST error"),
+            Error::PopUnsupported => f.write_str("Proof of possession is not supported"),
         }
     }
 }
@@ -246,6 +282,13 @@ impl Keychain {
         }
     }
 
+    pub fn try_prove(&self, handle: usize) -> Result<ProofOfPossession, Error> {
+        match self.keys.get(handle) {
+            Some(k) => Ok(k.try_prove()?),
+            None => Err(Error::InvalidHandle),
+        }
+    }
+
     pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error> {
         match self.keys.get(handle) {
             Some(k) => Ok(k.public_key()),
@@ -257,7 +300,11 @@ impl Keychain {
 #[cfg(test)]
 mod tests {
     use super::{Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature};
-    use crate::{crypto::KeyPair, macros::unwrap_as, TryFromCBOR, TryIntoCBOR};
+    use crate::{
+        crypto::{KeyPair, ProofOfPossession, ProofVerifier},
+        macros::unwrap_as,
+        TryFromCBOR, TryIntoCBOR,
+    };
     use signature::{DigestVerifier, Verifier};
 
     macro_rules! impl_pk_serde_test {
@@ -378,5 +425,17 @@ mod tests {
         let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
 
         pub_key.verify(data, &sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_bls_pop() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
+        let sig = unwrap_as!(keychain.try_prove(handle).unwrap(), ProofOfPossession::Bls);
+
+        pub_key.verify_pop(&sig).unwrap();
     }
 }
