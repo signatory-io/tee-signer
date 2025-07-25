@@ -53,7 +53,6 @@ impl App {
         println!("Listening on {}", addr);
         loop {
             let (conn, addr) = listener.accept().await?;
-            println!("incoming connection from {}", addr);
 
             tokio::spawn(async move {
                 let cf = ClientFactory::new();

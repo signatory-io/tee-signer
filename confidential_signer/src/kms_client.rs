@@ -52,7 +52,6 @@ impl EncryptionBackend for Client {
             .send()
             .await
             .map_err(|e| error::Error::Encryption(e))?;
-        println!("response ciphertext: {:?}", response.ciphertext);
         Ok(response.ciphertext.into())
     }
 
@@ -65,7 +64,6 @@ impl EncryptionBackend for Client {
             .send()
             .await
             .map_err(|e| error::Error::Decryption(e))?;
-        println!("response plaintext: {:?}", response.plaintext);
         Ok(response.plaintext.into())
     }
 }
