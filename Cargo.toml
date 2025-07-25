@@ -1,4 +1,4 @@
 [workspace]
 
-members = ["ale", "nitro_signer", "nitro_signer_app", "nitro_signer_mock", "signer_core", "vsock"]
+members = ["ale", "confidential_signer", "confidential_signer_app", "confidential_signer_mock", "nitro_signer", "nitro_signer_app", "nitro_signer_mock", "signer_core", "vsock"]
 resolver = "2"

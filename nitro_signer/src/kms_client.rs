@@ -70,7 +70,7 @@ where
     type Output = Client<A>;
     type Credentials = Credentials;
 
-    fn try_new(
+    async fn try_new(
         &self,
         credentials: Self::Credentials,
     ) -> Result<Self::Output, <Client<A> as EncryptionBackend>::Error> {

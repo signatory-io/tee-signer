@@ -1,8 +1,9 @@
-use nitro_signer::{
+use confidential_signer::{
     rand_core,
-    signer_core::{rpc::server::Server, EncryptionBackend, EncryptionBackendFactory},
+    signer_core::{EncryptionBackend, EncryptionBackendFactory, rpc::server::Server},
     tokio,
 };
+// use hyper_rustls::TlsAcceptor;
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, io, net::SocketAddr};
 
@@ -57,12 +58,16 @@ impl EncryptionBackendFactory for PassthroughFactory {
 
 impl App {
     pub async fn run(addr: &SocketAddr) -> Result<(), Error> {
+        // Start listening
         let listener = tokio::net::TcpListener::bind(addr).await?;
         loop {
+            // Accept TCP connection
             let (conn, _) = listener.accept().await?;
-            tokio::spawn(async move {
-                let mut srv = Server::new(PassthroughFactory, rand_core::OsRng);
 
+            tokio::spawn(async move {
+                // Create server
+                let mut srv = Server::new(PassthroughFactory, rand_core::OsRng);
+                // Serve connection
                 if let Err(err) = srv.serve_connection(conn).await {
                     eprintln!("{}", err);
                 }
