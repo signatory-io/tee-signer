@@ -13,7 +13,7 @@ pub struct Config {
 
 #[derive(Deserialize)]
 pub struct Credentials {
-    pub wip_path: String,
+    pub wip_provider_path: String,
     pub encryption_key_path: String,
 }
 
@@ -27,7 +27,7 @@ impl ClientFactory {
 
 const CONFIDENTIAL_CONFIG_STR: &'static str = r#"{{
     "type": "external_account",
-    "audience": "//iam.googleapis.com/{wip_path}",
+    "audience": "//iam.googleapis.com/{wip_provider_path}",
     "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
     "token_url": "https://sts.googleapis.com/v1/token",
     "credential_source": {{
@@ -76,11 +76,9 @@ impl EncryptionBackendFactory for ClientFactory {
         &self,
         credentials: Self::Credentials,
     ) -> Result<Self::Output, <Self::Output as EncryptionBackend>::Error> {
-        println!("wip_path: {}", credentials.wip_path);
-        println!("encryption_key_path: {}", credentials.encryption_key_path);
         // prepare credentials file
         let credentials_json_str =
-            strfmt!(CONFIDENTIAL_CONFIG_STR, wip_path => credentials.wip_path).unwrap();
+            strfmt!(CONFIDENTIAL_CONFIG_STR, wip_provider_path => credentials.wip_provider_path).unwrap();
         let credentials_json = serde_json::from_str(&credentials_json_str).unwrap();
         let client = KeyManagementService::builder()
             .with_credentials(external_account::Builder::new(credentials_json).build()?)
