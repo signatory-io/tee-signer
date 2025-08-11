@@ -1,6 +1,8 @@
 use blake2::{digest, Blake2b, Digest};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
+use serde_repr::Deserialize_repr;
+use serde_repr::Serialize_repr;
 pub use signature::Error as SignatureError;
 use signature::{DigestSigner, Signer};
 use std::fmt::Debug;
@@ -42,8 +44,8 @@ pub enum KeyType {
     Bls,
 }
 
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq)]
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SigningVersion {
     /// Version 1: Standard signing algorithms
     V0 = 0,
@@ -55,41 +57,41 @@ pub enum SigningVersion {
     Latest = 255,
 }
 
-impl TryFrom<u8> for SigningVersion {
-    type Error = Error;
-    fn try_from(version: u8) -> Result<Self, Self::Error> {
-        match version {
-            0 => Ok(SigningVersion::V0),
-            1 => Ok(SigningVersion::V1),
-            2 => Ok(SigningVersion::V2),
-            _ => Err(Error::InvalidSigningVersion),
-        }
-    }
-}
+// impl TryFrom<u8> for SigningVersion {
+//     type Error = Error;
+//     fn try_from(version: u8) -> Result<Self, Self::Error> {
+//         match version {
+//             0 => Ok(SigningVersion::V0),
+//             1 => Ok(SigningVersion::V1),
+//             2 => Ok(SigningVersion::V2),
+//             _ => Err(Error::InvalidSigningVersion),
+//         }
+//     }
+// }
 
-impl TryFrom<Option<u8>> for SigningVersion {
-    type Error = Error;
-    fn try_from(version: Option<u8>) -> Result<Self, Self::Error> {
-        match version {
-            Some(0) => Ok(SigningVersion::V0),
-            Some(1) => Ok(SigningVersion::V1),
-            Some(2) => Ok(SigningVersion::V2),
-            None => Ok(SigningVersion::Latest),
-            _ => Err(Error::InvalidSigningVersion),
-        }
-    }
-}
+// impl TryFrom<Option<u8>> for SigningVersion {
+//     type Error = Error;
+//     fn try_from(version: Option<u8>) -> Result<Self, Self::Error> {
+//         match version {
+//             Some(0) => Ok(SigningVersion::V0),
+//             Some(1) => Ok(SigningVersion::V1),
+//             Some(2) => Ok(SigningVersion::V2),
+//             None => Ok(SigningVersion::Latest),
+//             _ => Err(Error::InvalidSigningVersion),
+//         }
+//     }
+// }
 
-impl From<SigningVersion> for u8 {
-    fn from(version: SigningVersion) -> Self {
-        match version {
-            SigningVersion::V0 => 0,
-            SigningVersion::V1 => 1,
-            SigningVersion::V2 => 2,
-            SigningVersion::Latest => 2,
-        }
-    }
-}
+// impl From<SigningVersion> for u8 {
+//     fn from(version: SigningVersion) -> Self {
+//         match version {
+//             SigningVersion::V0 => 0,
+//             SigningVersion::V1 => 1,
+//             SigningVersion::V2 => 2,
+//             SigningVersion::Latest => 2,
+//         }
+//     }
+// }
 
 impl Default for SigningVersion {
     fn default() -> Self {
