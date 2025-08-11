@@ -1,16 +1,62 @@
 use crate::{
     crypto::{
-        CryptoRngCore, Deserialize, KeyPair, PossessionProver, ProofVerifier, Random, Serialize,
-        Verifier,
+        self, CryptoRngCore, Deserialize, KeyPair, PossessionProver, ProofVerifier, Random,
+        Serialize, SigningVersion, Verifier,
     },
     serde_helper,
 };
 use blst::min_pk;
 pub use blst::BLST_ERROR;
-use std::convert::Infallible;
+use format_bytes::{format_bytes, DisplayBytes};
+use std::fmt::Display;
 
-const BLS_SIG_CIPHER_SUITE: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
-const BLS_POP_CIPHER_SUITE: &[u8] = b"BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
+#[derive(Debug, Clone)]
+pub enum Scheme {
+    Basic,
+    MessageAugmentation,
+    ProofOfPossession,
+}
+
+impl Display for Scheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Scheme::Basic => "NUL",
+            Scheme::MessageAugmentation => "AUG",
+            Scheme::ProofOfPossession => "POP",
+        })
+    }
+}
+
+impl DisplayBytes for Scheme {
+    fn display_bytes(&self, output: &mut dyn std::io::Write) -> std::io::Result<()> {
+        output
+            .write(match self {
+                Scheme::Basic => b"NUL",
+                Scheme::MessageAugmentation => b"AUG",
+                Scheme::ProofOfPossession => b"POP",
+            })
+            .and(Ok(()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum CipherSuite {
+    Signature(u8, Scheme),
+    ProofOfPossession(u8, Scheme),
+}
+
+impl Into<Vec<u8>> for CipherSuite {
+    fn into(self) -> Vec<u8> {
+        match self {
+            CipherSuite::Signature(g, scheme) => {
+                format_bytes!(b"BLS_SIG_BLS12381G{}_XMD:SHA-256_SSWU_RO_{}_", g, scheme)
+            }
+            CipherSuite::ProofOfPossession(g, scheme) => {
+                format_bytes!(b"BLS_POP_BLS12381G{}_XMD:SHA-256_SSWU_RO_{}_", g, scheme)
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Signature(min_pk::Signature);
@@ -89,34 +135,45 @@ impl core::ops::Deref for PublicKey {
 }
 
 impl Verifier<Signature> for PublicKey {
-    fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
+    fn verify(
+        &self,
+        msg: &[u8],
+        signature: &Signature,
+        version: SigningVersion,
+    ) -> Result<(), crypto::Error> {
+        let cipher_suite: Vec<u8> = match version {
+            SigningVersion::V0 => Err(crypto::Error::InvalidSigningVersion),
+            SigningVersion::V1 => Ok(CipherSuite::Signature(2, Scheme::MessageAugmentation)),
+            SigningVersion::V2 | SigningVersion::Latest => {
+                Ok(CipherSuite::Signature(2, Scheme::ProofOfPossession))
+            }
+        }?
+        .into();
         match signature
             .0
-            .verify(true, msg, BLS_SIG_CIPHER_SUITE, &[], self, true)
+            .verify(true, msg, &cipher_suite, &[], self, true)
         {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
             err => {
                 let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
-                Err(b.into())
+                Err(crypto::Error::Signature(b.into()))
             }
         }
     }
 }
 
 impl ProofVerifier<ProofOfPossession> for PublicKey {
-    fn verify_pop(&self, proof: &ProofOfPossession) -> Result<(), signature::Error> {
-        match proof.0.verify(
-            true,
-            &self.to_bytes(),
-            BLS_POP_CIPHER_SUITE,
-            &[],
-            self,
-            true,
-        ) {
+    fn verify_pop(&self, proof: &ProofOfPossession) -> Result<(), crypto::Error> {
+        let cipher_suite: Vec<u8> =
+            CipherSuite::ProofOfPossession(2, Scheme::ProofOfPossession).into();
+        match proof
+            .0
+            .verify(true, &self.to_bytes(), &cipher_suite, &[], self, true)
+        {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
             err => {
                 let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
-                Err(b.into())
+                Err(crypto::Error::Signature(b.into()))
             }
         }
     }
@@ -166,25 +223,39 @@ impl Random for SigningKey {
 
 impl KeyPair for SigningKey {
     type PublicKey = PublicKey;
-    type Error = Infallible;
+    type Error = crypto::Error;
     type Signature = Signature;
 
     fn public_key(&self) -> Self::PublicKey {
         PublicKey(self.sk_to_pk())
     }
 
-    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
-        Ok(Signature(self.sign(msg, BLS_SIG_CIPHER_SUITE, &[])))
+    fn try_sign(
+        &self,
+        msg: &[u8],
+        version: SigningVersion,
+    ) -> Result<Self::Signature, Self::Error> {
+        let cipher_suite: Vec<u8> = match version {
+            SigningVersion::V0 => Err(crypto::Error::InvalidSigningVersion),
+            SigningVersion::V1 => Ok(CipherSuite::Signature(2, Scheme::MessageAugmentation)),
+            SigningVersion::V2 | SigningVersion::Latest => {
+                Ok(CipherSuite::Signature(2, Scheme::ProofOfPossession))
+            }
+        }?
+        .into();
+        Ok(Signature(self.sign(msg, &cipher_suite, &[])))
     }
 }
 
 impl PossessionProver for SigningKey {
     type Proof = ProofOfPossession;
-    type Error = Infallible;
+    type Error = crypto::Error;
 
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
         let pk = self.sk_to_pk().to_bytes();
-        Ok(ProofOfPossession(self.sign(&pk, BLS_POP_CIPHER_SUITE, &[])))
+        let cipher_suite: Vec<u8> =
+            CipherSuite::ProofOfPossession(2, Scheme::ProofOfPossession).into();
+        Ok(ProofOfPossession(self.sign(&pk, &cipher_suite, &[])))
     }
 }
 

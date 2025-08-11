@@ -1,4 +1,4 @@
-use crate::crypto::{KeyType, PrivateKey, PublicKey, Signature};
+use crate::crypto::{KeyType, PrivateKey, PublicKey, Signature, SigningVersion};
 use crate::rpc::{
     Error as RPCError, GenerateAndImportResult, GenerateResult, ImportResult, Request,
     Result as RPCResult,
@@ -132,18 +132,30 @@ where
             .await
     }
 
-    pub async fn try_sign(&mut self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
+    pub async fn try_sign(
+        &mut self,
+        handle: usize,
+        msg: &[u8],
+        version: SigningVersion,
+    ) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::Sign {
             handle: handle,
             message: msg.into(),
+            version,
         })
         .await
     }
 
-    pub async fn try_sign_with(&mut self, key_data: &[u8], msg: &[u8]) -> Result<Signature, Error> {
+    pub async fn try_sign_with(
+        &mut self,
+        key_data: &[u8],
+        msg: &[u8],
+        version: SigningVersion,
+    ) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::SignWith {
             encrypted_private_key: key_data.into(),
             message: msg.into(),
+            version,
         })
         .await
     }

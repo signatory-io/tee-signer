@@ -1,5 +1,5 @@
 use crate::{
-    crypto::{KeyType, PrivateKey},
+    crypto::{KeyType, PrivateKey, SigningVersion},
     serde_helper::bytes,
 };
 pub use crate::{GenerateAndImportResult, GenerateResult, ImportResult};
@@ -19,12 +19,14 @@ pub enum Request<C> {
         handle: usize,
         #[serde(with = "bytes")]
         message: Vec<u8>,
+        version: SigningVersion,
     },
     SignWith {
         #[serde(with = "bytes")]
         encrypted_private_key: Vec<u8>,
         #[serde(with = "bytes")]
         message: Vec<u8>,
+        version: SigningVersion,
     },
     PublicKey(usize),
     PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
@@ -63,7 +65,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto::{Blake2b256, KeyType, PublicKey, Signature};
+    use crate::crypto::{Blake2b256, KeyType, PublicKey, Signature, SigningVersion};
     use crate::rpc::{
         client::{Client, Error as ClientError},
         server::Server,
@@ -72,7 +74,7 @@ mod tests {
     use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
     use crate::{macros::unwrap_as, EncryptedSigner};
     use blake2::Digest;
-    use signature::{DigestVerifier, Verifier};
+    use signature::DigestVerifier;
     use tokio::net::UnixStream;
 
     #[tokio::test]
@@ -94,7 +96,7 @@ mod tests {
                 let data = b"text";
                 let sig = unwrap_as!(
                     client
-                        .try_sign_with(&res.encrypted_private_key, data)
+                        .try_sign_with(&res.encrypted_private_key, data, SigningVersion::Latest)
                         .await
                         .unwrap(),
                     Signature::Secp256k1

@@ -1,6 +1,7 @@
 use crate::{
     crypto::{
         Blake2b256, CryptoRngCore, Deserialize, Digest, DigestSigner, KeyPair, Random, Serialize,
+        SigningVersion,
     },
     serde_helper,
 };
@@ -143,7 +144,11 @@ where
     fn public_key(&self) -> Self::PublicKey {
         VerifyingKey(self.verifying_key().clone())
     }
-    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
+    fn try_sign(
+        &self,
+        msg: &[u8],
+        _version: SigningVersion,
+    ) -> Result<Self::Signature, Self::Error> {
         let mut d = Blake2b256::new();
         d.update(msg);
         Ok(Signature(self.0.try_sign_digest(d)?))
