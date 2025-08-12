@@ -141,18 +141,25 @@ impl Verifier<Signature> for PublicKey {
         signature: &Signature,
         version: SigningVersion,
     ) -> Result<(), crypto::Error> {
-        let cipher_suite: Vec<u8> = match version {
+        let blst_error = match version {
             SigningVersion::V0 => Err(crypto::Error::InvalidSigningVersion),
-            SigningVersion::V1 => Ok(CipherSuite::Signature(2, Scheme::MessageAugmentation)),
-            SigningVersion::V2 | SigningVersion::Latest => {
-                Ok(CipherSuite::Signature(2, Scheme::ProofOfPossession))
+            SigningVersion::V1 => {
+                let aug = self.to_bytes();
+                let cipher_suite: Vec<u8> =
+                    CipherSuite::Signature(2, Scheme::MessageAugmentation).into();
+                Ok(signature
+                    .0
+                    .verify(true, msg, &cipher_suite, &aug, self, true))
             }
-        }?
-        .into();
-        match signature
-            .0
-            .verify(true, msg, &cipher_suite, &[], self, true)
-        {
+            SigningVersion::V2 | SigningVersion::Latest => {
+                let cipher_suite: Vec<u8> =
+                    CipherSuite::Signature(2, Scheme::ProofOfPossession).into();
+                Ok(signature
+                    .0
+                    .verify(true, msg, &cipher_suite, &[], self, true))
+            }
+        }?;
+        match blst_error {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
             err => {
                 let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
@@ -235,15 +242,20 @@ impl KeyPair for SigningKey {
         msg: &[u8],
         version: SigningVersion,
     ) -> Result<Self::Signature, Self::Error> {
-        let cipher_suite: Vec<u8> = match version {
+        match version {
             SigningVersion::V0 => Err(crypto::Error::InvalidSigningVersion),
-            SigningVersion::V1 => Ok(CipherSuite::Signature(2, Scheme::MessageAugmentation)),
-            SigningVersion::V2 | SigningVersion::Latest => {
-                Ok(CipherSuite::Signature(2, Scheme::ProofOfPossession))
+            SigningVersion::V1 => {
+                let aug = self.sk_to_pk().to_bytes();
+                let cipher_suite: Vec<u8> =
+                    CipherSuite::Signature(2, Scheme::MessageAugmentation).into();
+                Ok(Signature(self.sign(msg, &cipher_suite, &aug)))
             }
-        }?
-        .into();
-        Ok(Signature(self.sign(msg, &cipher_suite, &[])))
+            SigningVersion::V2 | SigningVersion::Latest => {
+                let cipher_suite: Vec<u8> =
+                    CipherSuite::Signature(2, Scheme::ProofOfPossession).into();
+                Ok(Signature(self.sign(msg, &cipher_suite, &[])))
+            }
+        }
     }
 }
 
