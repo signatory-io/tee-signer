@@ -1,0 +1,7 @@
+[package]
+name = "confidential_signer_app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+confidential_signer = { path = "../confidential_signer" }

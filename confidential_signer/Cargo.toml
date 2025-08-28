@@ -1,0 +1,32 @@
+[package]
+name = "confidential_signer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Workspace/local dependencies
+signer_core = { path = "../signer_core" }
+
+# Crypto
+p256 = "0.13.2"
+rand_core = "0.6"
+sha2 = "0.10.9"
+
+# Google Cloud Platform
+# google-cloud-kms = "0.6.0"
+google-cloud-gax = "0.23.2"
+google-cloud-auth = "0.22.1"
+google-cloud-kms-v1 = "0.4.2"
+
+# Serialization
+base64 = "0.22.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.141"
+
+# Tokio/Async
+tokio = { version = "1.42", features = ["full"] }
+tokio-macros = "2.4"
+
+# Tonic/gRPC
+tonic = "0.12.3"
+strfmt = "0.2.5"

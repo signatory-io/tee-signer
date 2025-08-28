@@ -134,7 +134,7 @@ where
         };
 
         match (req, &mut self.signer) {
-            (Request::Initialize(cred), None) => match self.fact.try_new(cred) {
+            (Request::Initialize(cred), None) => match self.fact.try_new(cred).await {
                 Ok(enc) => {
                     self.signer = Some(enc.into());
                     RPCResult::<()>::Ok(())
