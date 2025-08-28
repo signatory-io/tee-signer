@@ -186,10 +186,11 @@ where
                 Request::Sign {
                     handle,
                     message: msg,
+                    version,
                 },
                 Some(signer),
             ) => signer
-                .try_sign(handle, &msg)
+                .try_sign(handle, &msg, version)
                 .map_err(RPCError::from)
                 .try_into_writer(buf)
                 .and(Ok(())),
@@ -198,10 +199,11 @@ where
                 Request::SignWith {
                     encrypted_private_key: key_data,
                     message: msg,
+                    version,
                 },
                 Some(signer),
             ) => signer
-                .try_sign_with(&key_data, &msg)
+                .try_sign_with(&key_data, &msg, version)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)

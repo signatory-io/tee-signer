@@ -1,4 +1,6 @@
-use crypto::{KeyPair, KeyType, Keychain, PrivateKey, ProofOfPossession, PublicKey, Signature};
+use crypto::{
+    KeyPair, KeyType, Keychain, PrivateKey, ProofOfPossession, PublicKey, Signature, SigningVersion,
+};
 use rand_core::CryptoRngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::future::Future;
@@ -146,8 +148,13 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
         }
     }
 
-    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error<E::Error>> {
-        Ok(self.keychain.try_sign(handle, msg)?)
+    pub fn try_sign(
+        &self,
+        handle: usize,
+        msg: &[u8],
+        version: SigningVersion,
+    ) -> Result<Signature, Error<E::Error>> {
+        Ok(self.keychain.try_sign(handle, msg, version)?)
     }
 
     pub fn public_key(&self, handle: usize) -> Result<PublicKey, Error<E::Error>> {
@@ -228,8 +235,9 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
         &self,
         key_data: &[u8],
         msg: &[u8],
+        version: SigningVersion,
     ) -> Result<Signature, Error<E::Error>> {
-        Ok(self.decrypt(key_data).await?.try_sign(msg)?)
+        Ok(self.decrypt(key_data).await?.try_sign(msg, version)?)
     }
 
     pub async fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<E::Error>> {
@@ -267,7 +275,7 @@ pub(crate) mod macros {
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto::{Blake2b256, PublicKey, Signature};
+    use crate::crypto::{Blake2b256, PublicKey, Signature, SigningVersion};
     use crate::macros::unwrap_as;
     use crate::{EncryptedSigner, EncryptionBackend, EncryptionBackendFactory, KeyType};
     use blake2::Digest;
@@ -325,7 +333,7 @@ mod tests {
         let data = b"text";
         let sig = unwrap_as!(
             signer
-                .try_sign_with(&res.encrypted_private_key, data)
+                .try_sign_with(&res.encrypted_private_key, data, SigningVersion::Latest)
                 .await
                 .unwrap(),
             Signature::Secp256k1
@@ -350,7 +358,7 @@ mod tests {
         let data = b"text";
         let sig = unwrap_as!(
             signer
-                .try_sign_with(&res.encrypted_private_key, data)
+                .try_sign_with(&res.encrypted_private_key, data, SigningVersion::Latest)
                 .await
                 .unwrap(),
             Signature::NistP256
@@ -375,7 +383,7 @@ mod tests {
         let data = b"text";
         let sig = unwrap_as!(
             signer
-                .try_sign_with(&res.encrypted_private_key, data)
+                .try_sign_with(&res.encrypted_private_key, data, SigningVersion::Latest)
                 .await
                 .unwrap(),
             Signature::Ed25519

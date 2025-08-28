@@ -1,8 +1,10 @@
 use blake2::{digest, Blake2b, Digest};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
+use serde_repr::Deserialize_repr;
+use serde_repr::Serialize_repr;
 pub use signature::Error as SignatureError;
-use signature::{DigestSigner, Signer, Verifier};
+use signature::{DigestSigner, Signer};
 use std::fmt::Debug;
 
 pub mod bls;
@@ -17,7 +19,8 @@ pub trait KeyPair {
     type Error;
 
     fn public_key(&self) -> Self::PublicKey;
-    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error>;
+    fn try_sign(&self, msg: &[u8], version: SigningVersion)
+        -> Result<Self::Signature, Self::Error>;
 }
 
 pub trait Random: Sized {
@@ -39,6 +42,21 @@ pub enum KeyType {
     NistP256,
     Ed25519,
     Bls,
+}
+
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SigningVersion {
+    V0 = 0,
+    V1,
+    V2,
+    Latest = 255,
+}
+
+impl Default for SigningVersion {
+    fn default() -> Self {
+        SigningVersion::Latest
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -84,8 +102,12 @@ impl From<bls::ProofOfPossession> for ProofOfPossession {
     }
 }
 
+pub trait Verifier<S> {
+    fn verify(&self, msg: &[u8], signature: &S, version: SigningVersion) -> Result<(), Error>;
+}
+
 pub trait ProofVerifier<S> {
-    fn verify_pop(&self, proof: &S) -> Result<(), signature::Error>;
+    fn verify_pop(&self, proof: &S) -> Result<(), Error>;
 }
 
 pub(crate) type Blake2b256 = Blake2b<digest::consts::U32>;
@@ -98,7 +120,11 @@ impl KeyPair for ed25519_dalek::SigningKey {
     fn public_key(&self) -> Self::PublicKey {
         self.verifying_key().clone()
     }
-    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
+    fn try_sign(
+        &self,
+        msg: &[u8],
+        _version: SigningVersion,
+    ) -> Result<Self::Signature, Self::Error> {
         // Tezos uses Blake2b pre-hashing in conjunction with regular Ed25519/SHA512
         let d = Blake2b256::digest(msg);
         Ok(Signer::try_sign(self, &d)?)
@@ -155,14 +181,24 @@ impl KeyPair for PrivateKey {
     type Signature = Signature;
     type Error = Error;
 
-    fn try_sign(&self, msg: &[u8]) -> Result<Self::Signature, Self::Error> {
+    fn try_sign(
+        &self,
+        msg: &[u8],
+        version: SigningVersion,
+    ) -> Result<Self::Signature, Self::Error> {
         match self {
-            PrivateKey::Secp256k1(val) => val.try_sign(msg).map(Into::into).map_err(Into::into),
-            PrivateKey::NistP256(val) => val.try_sign(msg).map(Into::into).map_err(Into::into),
-            PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg)
+            PrivateKey::Secp256k1(val) => val
+                .try_sign(msg, version)
                 .map(Into::into)
                 .map_err(Into::into),
-            PrivateKey::Bls(val) => Ok(val.try_sign(msg).unwrap().into()),
+            PrivateKey::NistP256(val) => val
+                .try_sign(msg, version)
+                .map(Into::into)
+                .map_err(Into::into),
+            PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg, version)
+                .map(Into::into)
+                .map_err(Into::into),
+            PrivateKey::Bls(val) => Ok(val.try_sign(msg, version).unwrap().into()),
         }
     }
 
@@ -226,6 +262,7 @@ pub enum Error {
     Signature(SignatureError),
     Bls(bls::Error),
     PopUnsupported,
+    InvalidSigningVersion,
 }
 
 impl std::fmt::Display for Error {
@@ -235,6 +272,7 @@ impl std::fmt::Display for Error {
             Error::Signature(_) => f.write_str("signature error"),
             Error::Bls(_) => f.write_str("BLST error"),
             Error::PopUnsupported => f.write_str("Proof of possession is not supported"),
+            Error::InvalidSigningVersion => f.write_str("Invalid signing     version"),
         }
     }
 }
@@ -275,9 +313,14 @@ impl Keychain {
         self.keys.len() - 1
     }
 
-    pub fn try_sign(&self, handle: usize, msg: &[u8]) -> Result<Signature, Error> {
+    pub fn try_sign(
+        &self,
+        handle: usize,
+        msg: &[u8],
+        version: SigningVersion,
+    ) -> Result<Signature, Error> {
         match self.keys.get(handle) {
-            Some(k) => Ok(k.try_sign(msg)?),
+            Some(k) => Ok(k.try_sign(msg, version)?),
             None => Err(Error::InvalidHandle),
         }
     }
@@ -299,13 +342,15 @@ impl Keychain {
 
 #[cfg(test)]
 mod tests {
-    use super::{Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature};
+    use super::{
+        Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature, SigningVersion,
+    };
     use crate::{
-        crypto::{KeyPair, ProofOfPossession, ProofVerifier},
+        crypto::{KeyPair, ProofOfPossession, ProofVerifier, Verifier},
         macros::unwrap_as,
         TryFromCBOR, TryIntoCBOR,
     };
-    use signature::{DigestVerifier, Verifier};
+    use signature::{DigestVerifier, Verifier as SigVerifier};
 
     macro_rules! impl_pk_serde_test {
         ($name:ident, $ty:tt) => {
@@ -349,7 +394,7 @@ mod tests {
             fn $name() {
                 let pk = PrivateKey::generate(KeyType::$ty, &mut rand_core::OsRng).unwrap();
                 let data = b"text";
-                let sig = pk.try_sign(data).unwrap();
+                let sig = pk.try_sign(data, SigningVersion::Latest).unwrap();
                 let ser_sig = sig.try_into_cbor().unwrap();
                 let de_sig = Signature::try_from_cbor(&ser_sig).unwrap();
                 assert!(matches!(de_sig, Signature::$ty(_)));
@@ -370,7 +415,9 @@ mod tests {
 
         let data = b"text";
         let sig = unwrap_as!(
-            keychain.try_sign(handle, data).unwrap(),
+            keychain
+                .try_sign(handle, data, SigningVersion::Latest)
+                .unwrap(),
             Signature::Secp256k1
         );
 
@@ -389,7 +436,9 @@ mod tests {
 
         let data = b"text";
         let sig = unwrap_as!(
-            keychain.try_sign(handle, data).unwrap(),
+            keychain
+                .try_sign(handle, data, SigningVersion::Latest)
+                .unwrap(),
             Signature::NistP256
         );
 
@@ -407,7 +456,12 @@ mod tests {
         let handle = keychain.import(pk);
 
         let data = b"text";
-        let sig = unwrap_as!(keychain.try_sign(handle, data).unwrap(), Signature::Ed25519);
+        let sig = unwrap_as!(
+            keychain
+                .try_sign(handle, data, SigningVersion::Latest)
+                .unwrap(),
+            Signature::Ed25519
+        );
         let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Ed25519);
 
         let digest = Blake2b256::digest(data);
@@ -415,16 +469,35 @@ mod tests {
     }
 
     #[test]
-    fn keychain_bls() {
+    fn keychain_bls_v1() {
         let mut keychain = Keychain::new();
         let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
         let handle = keychain.import(pk);
 
         let data = b"text";
-        let sig = unwrap_as!(keychain.try_sign(handle, data).unwrap(), Signature::Bls);
+        let sig = unwrap_as!(
+            keychain.try_sign(handle, data, SigningVersion::V1).unwrap(),
+            Signature::Bls
+        );
         let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
 
-        pub_key.verify(data, &sig).unwrap();
+        pub_key.verify(data, &sig, SigningVersion::V1).unwrap();
+    }
+
+    #[test]
+    fn keychain_bls_v2() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let data = b"text";
+        let sig = unwrap_as!(
+            keychain.try_sign(handle, data, SigningVersion::V2).unwrap(),
+            Signature::Bls
+        );
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
+
+        pub_key.verify(data, &sig, SigningVersion::V2).unwrap();
     }
 
     #[test]
