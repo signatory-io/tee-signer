@@ -12,14 +12,14 @@ RUN yum install -y \
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 
-COPY . /enclave-signer
-RUN source $HOME/.cargo/env && cd enclave-signer && cargo build ${RELEASE:+--release} --bin nitro_signer_app
+COPY . /tee-signer
+RUN source $HOME/.cargo/env && cd tee-signer && cargo build ${RELEASE:+--release} --bin nitro_signer_app
 
 RUN mkdir -p /rootfs
 WORKDIR /rootfs
 
 RUN [ ! -z "$RELEASE" ] && TGT="release" || TGT="debug"; \
-    BINS="/enclave-signer/target/$TGT/nitro_signer_app" && \
+    BINS="/tee-signer/target/$TGT/nitro_signer_app" && \
     for bin in $BINS; do \
     ldd "$bin" | grep -Eo "/.*lib.*/[^ ]+" | \
     while read path; do \
