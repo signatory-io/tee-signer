@@ -1,6 +1,6 @@
 # TEE Signer
 
-This repository contains building blocks for signer services that operate within secure TEEs - isolated execution environments with no persistent storage and limited communication channels to the host machine. All sensitive information is encrypted before being sent back to the host for storage.
+This repository contains building blocks for signer services that operate within secure TEEs (Trusted Execution Environments) - isolated execution environments with no persistent storage and limited communication channels to the host machine. All sensitive information is encrypted before being sent back to the host for storage.
 
 The repository supports two confidential computing platforms:
 
