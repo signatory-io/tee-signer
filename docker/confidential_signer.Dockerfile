@@ -9,14 +9,14 @@ RUN apt update && apt install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY . /enclave-signer
-RUN cd enclave-signer && cargo build ${RELEASE:+--release} --bin confidential_signer_app
+COPY . /tee-signer
+RUN cd tee-signer && cargo build ${RELEASE:+--release} --bin confidential_signer_app
 
 RUN mkdir -p /rootfs
 WORKDIR /rootfs
 
 RUN [ ! -z "$RELEASE" ] && TGT="release" || TGT="debug"; \
-    BINS="/enclave-signer/target/$TGT/confidential_signer_app" && \
+    BINS="/tee-signer/target/$TGT/confidential_signer_app" && \
     for bin in $BINS; do \
     ldd "$bin" | grep -Eo "/.*lib.*/[^ ]+" | \
     while read path; do \

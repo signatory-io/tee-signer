@@ -1,6 +1,6 @@
-# Enclave Signer
+# TEE Signer
 
-This repository contains building blocks for signer services that operate within secure enclaves - isolated execution environments with no persistent storage and limited communication channels to the host machine. All sensitive information is encrypted before being sent back to the host for storage.
+This repository contains building blocks for signer services that operate within secure TEEs (Trusted Execution Environments) - isolated execution environments with no persistent storage and limited communication channels to the host machine. All sensitive information is encrypted before being sent back to the host for storage.
 
 The repository supports two confidential computing platforms:
 
@@ -15,7 +15,7 @@ A confidential computing solution that provides hardware-isolated environments f
 ## Architecture
 
 Both signers follow the same architectural pattern:
-- **Isolated execution**: No persistent storage within the enclave
+- **Isolated execution**: No persistent storage within the TEE
 - **Encrypted communication**: All sensitive data is encrypted before leaving the secure environment
 - **KMS integration**: Uses cloud provider KMS for key management and cryptographic operations
 - **RPC interface**: Provides a consistent RPC protocol for signing operations

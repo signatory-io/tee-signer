@@ -66,7 +66,7 @@ The private key will be decrypted, stored in the session-local in-memory storage
 
 ### ImportUnencrypted
 
-A less secure way to get the private key into the enclave.
+A less secure way to get the private key into the TEE.
 
 ```text
 ImportUnencryptedRequest = {
