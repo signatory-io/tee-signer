@@ -38,7 +38,7 @@ mod linux {
         let loc = listener.local_addr().unwrap();
         let jh = thread::spawn(move || {
             let mut count = 0;
-            for incoming in listener.incoming() {
+            for incoming in listener.into_iter() {
                 match incoming {
                     Ok(conn) => {
                         let mut buf: [u8; 8] = [0; 8];
