@@ -418,7 +418,7 @@ impl Listener {
         self.0.take_error()
     }
 
-    pub fn incoming(&self) -> Incoming {
+    pub fn incoming(&self) -> Incoming<'_> {
         Incoming(self)
     }
 }

@@ -52,7 +52,7 @@ impl App {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         println!("Listening on {}", addr);
         loop {
-            let (conn, addr) = listener.accept().await?;
+            let (conn, _) = listener.accept().await?;
 
             tokio::spawn(async move {
                 let cf = ClientFactory::new();
