@@ -31,6 +31,54 @@ mod linux {
         jh.join().unwrap();
     }
 
+    #[test]
+    fn echo_iter() {
+        let listener =
+            SyncListener::bind(&SocketAddr::new(VMADDR_CID_ANY, VMADDR_PORT_ANY)).unwrap();
+        let loc = listener.local_addr().unwrap();
+        let jh = thread::spawn(move || {
+            let mut count = 0;
+            for incoming in listener.into_iter() {
+                match incoming {
+                    Ok(conn) => {
+                        let mut buf: [u8; 8] = [0; 8];
+                        conn.recv(&mut buf).unwrap();
+                        conn.send(&buf).unwrap();
+                    }
+                    Err(err) => {
+                        eprint!("error: {}", err);
+                        assert!(false);
+                    }
+                }
+                count += 1;
+                if count == 2 {
+                    break;
+                }
+            }
+        });
+        
+        let data1: &[u8; 8] = b"dataone1";
+        let data2: &[u8; 8] = b"datatwo2";
+
+        // First connection
+        let client1 =
+            SyncStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, loc.port())).unwrap();
+        client1.send(data1).unwrap();
+        let mut buf1: [u8; 8] = [0; 8];
+        let sz1 = client1.recv(&mut buf1).unwrap();
+        assert_eq!(&buf1[0..sz1], data1);
+
+        // Second connection
+        let client2 =
+            SyncStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, loc.port())).unwrap();
+        client2.send(data2).unwrap();
+        let mut buf2: [u8; 8] = [0; 8];
+        let sz2 = client2.recv(&mut buf2).unwrap();
+        assert_eq!(&buf2[0..sz2], data2);
+
+        assert!(jh.join().is_ok());
+    }
+
     #[tokio::test]
     async fn async_echo() {
         let listener = Listener::bind(&SocketAddr::new(VMADDR_CID_ANY, VMADDR_PORT_ANY)).unwrap();
