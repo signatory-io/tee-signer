@@ -1,6 +1,10 @@
 # Signer RPC
 
-All communication is done over [VSock](https://man7.org/linux/man-pages/man7/vsock.7.html) stream socket. Both request and reply consist of four bytes of an envelope length in big endian form followed by a [CBOR](https://cbor.io/) encoded message of that size. The length header was added to overcome limitations of some CBOR implementations which may have trouble reading from an endless stream.
+Messages are sent as a length-prefixed [CBOR](https://cbor.io/) stream: four bytes of big‑endian length followed by a CBOR-encoded message of that size. This framing avoids issues with CBOR decoders on endless streams.
+
+Transport:
+- AWS Nitro Enclave: VSock stream socket
+- Google Cloud Confidential Space: TCP socket
 
 All binary data is encoded as CBOR byte strings (type 2). Objects are encoded as string-keyed maps.
 
@@ -25,19 +29,25 @@ Error = {
 
 ### Initialize
 
-This is the first request sent by the client. It's used to provide all information to initialize the encryption engine (KMS in this case).
+This is the first request sent by the client. It's used to provide all information to initialize the encryption engine (cloud KMS wrapping in this case).
 
 ```text
 InitializeRequest = {
     Initialize: Credentials,
 }
 
-Credentials = {
+# Credentials are platform-specific
+Credentials (AWS) = {
     access_key_id: string,
     secret_access_key: string,
     session_token?: string,
     encryption_key_id: string,
     region: string,
+}
+
+Credentials (GCP) = {
+    wip_provider_path: string,
+    encryption_key_path: string,
 }
 
 InitializeResult = null
@@ -122,6 +132,7 @@ SignRequest = {
     Sign: {
         handle: unsigned,
         message: bytes,
+        version: SigningVersion,
     },
 }
 
@@ -141,6 +152,7 @@ SignWithRequest = {
     SignWith: {
         encrypted_private_key: bytes,
         message: bytes,
+        version: SigningVersion,
     }
 }
 
@@ -171,6 +183,18 @@ PublicKeyFromRequest = {
 PublicKeyFromResult = PublicKey
 ```
 
+### ProvePossession
+
+Return a proof of possession for algorithms that support it (currently BLS).
+
+```text
+ProvePossessionRequest = {
+    ProvePossession: unsigned,  # handle
+}
+
+ProvePossessionResult = ProofOfPossession
+```
+
 ## Binary Formats
 
 ### ECDSA
@@ -190,3 +214,7 @@ PublicKeyFromResult = PublicKey
 * Public key: 48 byte compressed point
 * Private key: 32 byte scalar
 * Signature: 96 byte compressed
+
+## Notes
+
+• KMS role: Cloud KMS is used to encrypt/decrypt wrapped private keys. All signing operations occur inside the TEE.
