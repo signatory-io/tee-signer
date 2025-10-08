@@ -106,3 +106,85 @@ pub fn build(address: SocketAddr) -> SharedHttpClient {
     let https_connector = hyper_rustls::HttpsConnector::from((vsock_connector, cc));
     HyperClientBuilder::new().build(https_connector)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::task::Waker;
+
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use vsock::{asio::Listener, VMADDR_CID_ANY, VMADDR_CID_LOCAL, VMADDR_PORT_ANY};
+
+    #[test]
+    fn test_vsock_connector_new() {
+        let addr = SocketAddr::new(3, 8000);
+        let connector = VSockConnector::new(addr);
+        assert_eq!(connector.address.cid(), 3);
+        assert_eq!(connector.address.port(), 8000);
+    }
+
+    #[test]
+    fn test_build_creates_client() {
+        let addr = SocketAddr::new(3, 8000);
+        let _client = build(addr);
+        // Test passes if build doesn't panic
+    }
+
+    #[tokio::test]
+    async fn test_vsock_connector_and_connection() {
+        // Start a server on any available port
+        let listener = Listener::bind(&SocketAddr::new(VMADDR_CID_ANY, VMADDR_PORT_ANY)).unwrap();
+        let server_addr = listener.local_addr().unwrap();
+
+        // Test data to send
+        let test_data = b"Hello VSock!";
+
+        // Run server and client concurrently
+        tokio::join!(
+            // Server task
+            async {
+                let (mut conn, _) = listener.accept().await.unwrap();
+                let mut buf = vec![0u8; 1024];
+                let n = conn.read(&mut buf).await.unwrap();
+                assert_eq!(&buf[..n], test_data);
+                conn.write_all(b"Echo: ").await.unwrap();
+                conn.write_all(&buf[..n]).await.unwrap();
+            },
+            // Client task
+            async {
+                let addr = SocketAddr::new(VMADDR_CID_LOCAL, server_addr.port());
+                let mut connector = VSockConnector::new(addr);
+                assert!(connector
+                    .poll_ready(&mut std::task::Context::from_waker(&Waker::noop()))
+                    .is_ready());
+
+                // Use connector to establish connection via hyper Service trait
+                use hyper::service::Service;
+                let mut connection = connector.call(Uri::default()).await.unwrap();
+
+                connection.connected();
+
+                // Write test data
+                connection.write_all(test_data).await.unwrap();
+
+                // Pin the connection for poll_* methods
+                let mut pinned = Pin::new(&mut connection);
+                assert!(pinned
+                    .as_mut()
+                    .poll_flush(&mut std::task::Context::from_waker(&Waker::noop()))
+                    .is_ready());
+                assert!(pinned
+                    .as_mut()
+                    .poll_shutdown(&mut std::task::Context::from_waker(&Waker::noop()))
+                    .is_ready());
+
+                // Read echo response
+                let mut buf = [0u8; 64];
+                let n = connection.read(&mut buf).await.unwrap();
+
+                let expected = format!("Echo: {}", String::from_utf8_lossy(test_data));
+                assert_eq!(&expected.as_bytes()[..n], &buf[..n]);
+            }
+        );
+    }
+}

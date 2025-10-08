@@ -80,11 +80,9 @@ impl<'a> Stream<'a> {
         loop {
             let b = self.get_u8()? as u64;
             if (v >> (64 - 7)) != 0 {
-                // The value is too large.
                 return Err(Error::ValueTooLarge);
             }
             if v == 0 && b == 0x80 {
-                // The value must be minimally encoded.
                 return Err(Error::Encoding);
             }
             v = (v << 7) | (b & 0x7f);
@@ -344,3 +342,273 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stream_operations() {
+        let data = [0x42, 0x43, 0x44];
+        let mut stream = Stream::new(&data);
+        assert_eq!(stream.get_u8().unwrap(), 0x42);
+        assert_eq!(stream.len(), 2);
+        let bytes = stream.get_bytes(2).unwrap();
+        assert_eq!(bytes, &[0x43, 0x44]);
+    }
+
+    #[test]
+    fn test_stream_eos_errors() {
+        let mut stream = Stream::new(&[]);
+        assert!(matches!(stream.get_u8(), Err(Error::EOS)));
+        assert!(matches!(stream.get_bytes(1), Err(Error::EOS)));
+        assert!(matches!(stream.advance(1), Err(Error::EOS)));
+    }
+
+    #[test]
+    fn test_stream_get_base128_single_byte() {
+        let data = [0x7f];
+        let mut stream = Stream::new(&data);
+        assert_eq!(stream.get_base128().unwrap(), 127);
+    }
+
+    #[test]
+    fn test_stream_get_base128_multi_byte() {
+        let data = [0x81, 0x00];
+        let mut stream = Stream::new(&data);
+        assert_eq!(stream.get_base128().unwrap(), 128);
+    }
+
+    #[test]
+    fn test_stream_get_base128_invalid_encoding() {
+        let data = [0x80];
+        let mut stream = Stream::new(&data);
+        assert!(matches!(stream.get_base128(), Err(Error::Encoding)));
+    }
+
+    #[test]
+    fn test_stream_get_base128_overflow() {
+        // Value that would overflow u64
+        let data = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+        let mut stream = Stream::new(&data);
+        assert!(matches!(stream.get_base128(), Err(Error::ValueTooLarge)));
+    }
+
+    #[test]
+    fn test_stream_get_eoc_present() {
+        let data = [0x00, 0x00, 0x42];
+        let mut stream = Stream::new(&data);
+        assert!(stream.get_eoc());
+        assert_eq!(stream.len(), 1);
+    }
+
+    #[test]
+    fn test_stream_get_eoc_absent() {
+        let data = [0x00, 0x01];
+        let mut stream = Stream::new(&data);
+        assert!(!stream.get_eoc());
+        assert_eq!(stream.len(), 2);
+    }
+
+    #[test]
+    fn test_stream_get_tag() {
+        // Simple tag
+        assert_eq!(Stream::new(&[0x02]).get_tag().unwrap(), ASN1_INTEGER);
+        // Constructed tag
+        assert_eq!(Stream::new(&[0x30]).get_tag().unwrap(), ASN1_SEQUENCE);
+        // Long form tag
+        assert_eq!(Stream::new(&[0x1f, 0x20]).get_tag().unwrap(), 32);
+        // Context-specific
+        let tag = Stream::new(&[0xa0]).get_tag().unwrap();
+        assert_eq!(tag & ASN1_CONTEXT_SPECIFIC, ASN1_CONTEXT_SPECIFIC);
+    }
+
+    #[test]
+    fn test_stream_get_tag_errors() {
+        assert!(matches!(
+            Stream::new(&[0x00]).get_tag(),
+            Err(Error::Encoding)
+        ));
+        assert!(matches!(
+            Stream::new(&[0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f]).get_tag(),
+            Err(Error::Overflow)
+        ));
+    }
+
+    #[test]
+    fn test_stream_get_unsigned() {
+        let data = [0x01, 0x02, 0x03];
+        let mut stream = Stream::new(&data);
+        assert_eq!(stream.get_unsigned(3).unwrap(), 0x010203);
+    }
+
+    #[test]
+    fn test_stream_get_unsigned_overflow() {
+        let data = [0xff; 9]; // 9 bytes will overflow u64
+        let mut stream = Stream::new(&data);
+        assert!(matches!(stream.get_unsigned(9), Err(Error::Overflow)));
+    }
+
+    #[test]
+    fn test_elem_get_bytes() {
+        let mut stream = Stream::new(&[0x01, 0x02, 0x03]);
+        let elem = Elem {
+            tag: 0,
+            len: Some(2),
+            start: 3,
+        };
+        assert_eq!(elem.get_bytes(&mut stream).unwrap(), &[0x01, 0x02]);
+
+        // Infinite length error
+        let mut stream2 = Stream::new(&[0x01, 0x02]);
+        let elem2 = Elem {
+            tag: ASN1_SEQUENCE,
+            len: None,
+            start: 2,
+        };
+        assert!(matches!(
+            elem2.get_bytes(&mut stream2),
+            Err(Error::Infinite)
+        ));
+    }
+
+    #[test]
+    fn test_parse_integer() {
+        let mut stream = Stream::new(&[0x02, 0x01, 0x2a]); // INTEGER 42
+        let doc = Elem::new(&stream);
+        let val: u8 = doc.get_tagged(&mut stream).unwrap().unwrap();
+        assert_eq!(val, 42);
+
+        // Integer overflow
+        let mut stream2 = Stream::new(&[0x02, 0x02, 0x01, 0x00]); // 256, too large for u8
+        let doc2 = Elem::new(&stream2);
+        assert!(doc2.get_tagged::<u8>(&mut stream2).is_err());
+    }
+
+    #[test]
+    fn test_parse_sequence() {
+        // Short length: SEQUENCE { INTEGER 5 }
+        let mut stream = Stream::new(&[0x30, 0x03, 0x02, 0x01, 0x05]);
+        let seq = new_document(&mut stream, Some(ASN1_SEQUENCE))
+            .unwrap()
+            .unwrap();
+        assert_eq!(seq.tag, ASN1_SEQUENCE);
+        assert_eq!(seq.len, Some(3));
+
+        // Long form length
+        let mut stream2 = Stream::new(&[0x30, 0x81, 0x05, 0x02, 0x01, 0x2a, 0x02, 0x01, 0x2b]);
+        let seq2 = new_document(&mut stream2, Some(ASN1_SEQUENCE))
+            .unwrap()
+            .unwrap();
+        assert_eq!(seq2.len, Some(5));
+
+        // Nested sequences
+        let mut stream3 = Stream::new(&[0x30, 0x05, 0x30, 0x03, 0x02, 0x01, 0x01]);
+        let outer = new_document(&mut stream3, Some(ASN1_SEQUENCE))
+            .unwrap()
+            .unwrap();
+        let inner = outer
+            .get_elem(&mut stream3, Some(ASN1_SEQUENCE))
+            .unwrap()
+            .unwrap();
+        let val: u8 = inner.get_tagged(&mut stream3).unwrap().unwrap();
+        assert_eq!(val, 1);
+    }
+
+    #[test]
+    fn test_elem_get_optional() {
+        // Present
+        let mut stream = Stream::new(&[0x02, 0x01, 0x05]);
+        assert!(Elem::new(&stream)
+            .get_optional(&mut stream, ASN1_INTEGER)
+            .unwrap()
+            .is_some());
+
+        // Absent - empty stream
+        let mut stream2 = Stream::new(&[]);
+        assert!(Elem::new(&stream2)
+            .get_optional(&mut stream2, ASN1_INTEGER)
+            .unwrap()
+            .is_none());
+
+        // Absent - wrong tag
+        let mut stream3 = Stream::new(&[0x04, 0x01, 0x05]);
+        assert!(Elem::new(&stream3)
+            .get_optional(&mut stream3, ASN1_INTEGER)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn test_elem_consume() {
+        // Definite length
+        let mut stream = Stream::new(&[0x02, 0x01, 0x05, 0x99]);
+        let elem = new_document(&mut stream, Some(ASN1_INTEGER))
+            .unwrap()
+            .unwrap();
+        elem.consume(&mut stream).unwrap();
+        assert_eq!(stream.len(), 1);
+
+        // Indefinite length
+        let mut stream2 = Stream::new(&[0x30, 0x80, 0x02, 0x01, 0x05, 0x00, 0x00, 0x99]);
+        let seq = new_document(&mut stream2, Some(ASN1_SEQUENCE))
+            .unwrap()
+            .unwrap();
+        seq.consume(&mut stream2).unwrap();
+        assert_eq!(stream2.len(), 1);
+    }
+
+    #[test]
+    fn test_expect_some() {
+        assert_eq!(Ok(Some(42)).expect_some().unwrap(), 42);
+        assert!(matches!(
+            Ok::<Option<u32>, Error>(None).expect_some(),
+            Err(Error::EOS)
+        ));
+    }
+
+    #[test]
+    fn test_parsing_errors() {
+        // Tag mismatch
+        assert!(matches!(
+            new_document(&mut Stream::new(&[0x04, 0x01, 0x05]), Some(ASN1_INTEGER)),
+            Err(Error::Tag(_))
+        ));
+
+        // Invalid length encoding
+        assert!(matches!(
+            new_document(&mut Stream::new(&[0x02, 0x80]), Some(ASN1_INTEGER)),
+            Err(Error::Encoding)
+        ));
+
+        // Length field too long (5 octets)
+        assert!(matches!(
+            new_document(
+                &mut Stream::new(&[0x02, 0x85, 0x01, 0x02, 0x03, 0x04, 0x05]),
+                None
+            ),
+            Err(Error::Encoding)
+        ));
+    }
+
+    #[test]
+    fn test_parse_object_identifier() {
+        let mut stream = Stream::new(&[0x06, 0x03, 0x2a, 0x86, 0x48]); // OID 1.2.840
+        let oid: ObjectIdentifier = Elem::new(&stream).get_tagged(&mut stream).unwrap().unwrap();
+        assert_eq!(oid.to_string(), "1.2.840");
+    }
+
+    #[test]
+    fn test_empty_document() {
+        assert!(new_document(&mut Stream::new(&[]), None).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_indefinite_length() {
+        let mut stream = Stream::new(&[0x30, 0x80, 0x02, 0x01, 0x05, 0x00, 0x00]);
+        let seq = new_document(&mut stream, Some(ASN1_SEQUENCE))
+            .unwrap()
+            .unwrap();
+        assert_eq!(seq.len, None);
+    }
+}

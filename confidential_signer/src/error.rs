@@ -39,3 +39,37 @@ impl From<google_cloud_gax::client_builder::Error> for Error {
         Error::Auth(e)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error as StdError;
+
+    #[test]
+    fn test_error_display() {
+        let auth = Error::Auth(google_cloud_gax::client_builder::Error::cred("test"));
+        let enc = Error::Encryption(google_cloud_gax::error::Error::timeout("test"));
+        let dec = Error::Decryption(google_cloud_gax::error::Error::exhausted("test"));
+
+        assert!(format!("{}", auth).starts_with("Auth error:"));
+        assert!(format!("{}", enc).starts_with("Encryption error:"));
+        assert!(format!("{}", dec).starts_with("Decryption error:"));
+    }
+
+    #[test]
+    fn test_error_source() {
+        let err = Error::Auth(google_cloud_gax::client_builder::Error::cred("test"));
+        assert!(StdError::source(&err).is_some());
+        let enc = Error::Encryption(google_cloud_gax::error::Error::timeout("test"));
+        assert!(StdError::source(&enc).is_some());
+        let dec = Error::Decryption(google_cloud_gax::error::Error::exhausted("test"));
+        assert!(StdError::source(&dec).is_some());
+    }
+
+    #[test]
+    fn test_from_trait() {
+        let auth_err = google_cloud_gax::client_builder::Error::cred("test");
+        let err: Error = auth_err.into();
+        assert!(matches!(err, Error::Auth(_)));
+    }
+}

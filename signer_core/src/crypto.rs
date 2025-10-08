@@ -1,7 +1,6 @@
 use blake2::{digest, Blake2b, Digest};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
-use serde_repr::Deserialize_repr;
 use serde_repr::Serialize_repr;
 pub use signature::Error as SignatureError;
 use signature::{DigestSigner, Signer};
@@ -44,18 +43,34 @@ pub enum KeyType {
     Bls,
 }
 
-#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize_repr, Debug, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SigningVersion {
     V0 = 0,
     V1,
     V2,
+    Invalid = 254,
     Latest = 255,
 }
 
 impl Default for SigningVersion {
     fn default() -> Self {
         SigningVersion::Latest
+    }
+}
+
+impl<'de> Deserialize<'de> for SigningVersion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = u8::deserialize(deserializer)?;
+        Ok(match v {
+            0 => SigningVersion::V0,
+            1 => SigningVersion::V1,
+            2 => SigningVersion::V2,
+            _ => SigningVersion::Invalid,
+        })
     }
 }
 
@@ -198,7 +213,10 @@ impl KeyPair for PrivateKey {
             PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg, version)
                 .map(Into::into)
                 .map_err(Into::into),
-            PrivateKey::Bls(val) => Ok(val.try_sign(msg, version).unwrap().into()),
+            PrivateKey::Bls(val) => val
+                .try_sign(msg, version)
+                .map(Into::into)
+                .map_err(Into::into),
         }
     }
 
@@ -343,10 +361,11 @@ impl Keychain {
 #[cfg(test)]
 mod tests {
     use super::{
-        Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature, SigningVersion,
+        Blake2b256, Digest, Error, KeyType, Keychain, PossessionProver, PrivateKey,
+        ProofOfPossession, PublicKey, Signature, SigningVersion,
     };
     use crate::{
-        crypto::{KeyPair, ProofOfPossession, ProofVerifier, Verifier},
+        crypto::{KeyPair, ProofVerifier, Verifier},
         macros::unwrap_as,
         TryFromCBOR, TryIntoCBOR,
     };
@@ -406,6 +425,22 @@ mod tests {
     impl_sig_serde_test!(serde_sig_secp256k1, Secp256k1);
     impl_sig_serde_test!(serde_sig_ed25519, Ed25519);
     impl_sig_serde_test!(serde_sig_bls, Bls);
+
+    macro_rules! impl_pop_test {
+        ($name:ident, $ty:tt, $result:pat) => {
+            #[test]
+            fn $name() {
+                let pk = PrivateKey::generate(KeyType::$ty, &mut rand_core::OsRng).unwrap();
+                let sig = pk.try_prove();
+                assert!(matches!(sig, $result));
+            }
+        };
+    }
+
+    impl_pop_test!(pop_secp256k1, Secp256k1, Err(Error::PopUnsupported));
+    impl_pop_test!(pop_nist_p256, NistP256, Err(Error::PopUnsupported));
+    impl_pop_test!(pop_ed25519, Ed25519, Err(Error::PopUnsupported));
+    impl_pop_test!(pop_bls, Bls, Ok(ProofOfPossession::Bls(_)));
 
     #[test]
     fn keychain_secp256k1() {
@@ -469,22 +504,6 @@ mod tests {
     }
 
     #[test]
-    fn keychain_bls_v1() {
-        let mut keychain = Keychain::new();
-        let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
-        let handle = keychain.import(pk);
-
-        let data = b"text";
-        let sig = unwrap_as!(
-            keychain.try_sign(handle, data, SigningVersion::V1).unwrap(),
-            Signature::Bls
-        );
-        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
-
-        pub_key.verify(data, &sig, SigningVersion::V1).unwrap();
-    }
-
-    #[test]
     fn keychain_bls_v2() {
         let mut keychain = Keychain::new();
         let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
@@ -510,5 +529,16 @@ mod tests {
         let sig = unwrap_as!(keychain.try_prove(handle).unwrap(), ProofOfPossession::Bls);
 
         pub_key.verify_pop(&sig).unwrap();
+    }
+
+    #[test]
+    fn test_proof_of_possession_from() {
+        let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
+        let bls_pop = pk.try_prove().unwrap();
+        let pop: ProofOfPossession = bls_pop.into();
+        assert!(matches!(pop, ProofOfPossession::Bls(_)));
+        let pop_bls = unwrap_as!(pop, ProofOfPossession::Bls);
+        let pub_key = unwrap_as!(pk.public_key(), PublicKey::Bls);
+        assert!(pub_key.verify_pop(&pop_bls).is_ok());
     }
 }

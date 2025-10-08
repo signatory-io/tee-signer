@@ -417,12 +417,131 @@ fn decrypt_cfr<A>(
     Ok(dec.decrypt_padded_vec_mut::<block_padding::Pkcs7>(&data.cipher_text)?)
 }
 
-#[test]
-fn parse_and_decrypt() {
+#[cfg(test)]
+mod tests {
+    use super::*;
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
     use rsa::pkcs1::DecodeRsaPrivateKey;
     use std::convert::Infallible;
+    use std::error::Error as StdError;
+
+    #[test]
+    fn test_credentials_serde() {
+        let creds = Credentials {
+            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            session_token: Some("token123".to_string()),
+            encryption_key_id:
+                "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+                    .to_string(),
+            region: "us-east-1".to_string(),
+        };
+
+        let json = serde_json::to_string(&creds).unwrap();
+        let deserialized: Credentials = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.access_key_id, creds.access_key_id);
+        assert_eq!(deserialized.secret_access_key, creds.secret_access_key);
+        assert_eq!(deserialized.session_token, creds.session_token);
+        assert_eq!(deserialized.encryption_key_id, creds.encryption_key_id);
+        assert_eq!(deserialized.region, creds.region);
+    }
+
+    #[test]
+    fn test_credentials_without_session_token() {
+        let json = r#"{
+            "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "session_token": null,
+            "encryption_key_id": "arn:aws:kms:us-east-1:123456789012:key/test",
+            "region": "us-west-2"
+        }"#;
+        let creds: Credentials = serde_json::from_str(json).unwrap();
+        assert!(creds.session_token.is_none());
+        assert_eq!(creds.region, "us-west-2");
+    }
+
+    #[test]
+    fn test_error_display() {
+        let err: Error<Infallible> = Error::ZeroOutput;
+        assert_eq!(format!("{}", err), "zero output");
+
+        let err: Error<Infallible> = Error::MissingData;
+        assert_eq!(format!("{}", err), "some data is missing");
+
+        let err: Error<Infallible> = Error::Version(3);
+        assert!(format!("{}", err).contains("unexpected CMS version"));
+
+        let err: Error<Infallible> = Error::KeySize(24);
+        assert_eq!(format!("{}", err), "invalid key size: 24");
+
+        let err: Error<Infallible> = Error::IvSize(12);
+        assert_eq!(format!("{}", err), "invalid iv size: 12");
+
+        let err: Error<Infallible> = Error::Unpad;
+        assert_eq!(format!("{}", err), "unpad error");
+    }
+
+    #[test]
+    fn test_error_from_ale() {
+        let ale_err = ale::Error::EOS;
+        let err: Error<Infallible> = ale_err.into();
+        assert!(matches!(err, Error::Ber(_)));
+    }
+
+    #[test]
+    fn test_error_from_rsa() {
+        let rsa_err = rsa::Error::InvalidPadLen;
+        let err: Error<Infallible> = rsa_err.into();
+        assert!(matches!(err, Error::Rsa(_)));
+    }
+
+    #[test]
+    fn test_error_from_unpad() {
+        let unpad_err = block_padding::UnpadError;
+        let err: Error<Infallible> = unpad_err.into();
+        assert!(matches!(err, Error::Unpad));
+    }
+
+    #[test]
+    fn test_error_source() {
+        let ale_err = ale::Error::Overflow;
+        let err: Error<Infallible> = Error::Ber(ale_err);
+        assert!(StdError::source(&err).is_some());
+
+        let rsa_err = rsa::Error::InvalidPadLen;
+        let err: Error<Infallible> = Error::Rsa(rsa_err);
+        assert!(StdError::source(&err).is_some());
+    }
+
+    #[test]
+    fn test_parse_enveloped_data_invalid_ber() {
+        let data = vec![0x30, 0x06]; // SEQUENCE with length 6, but no content
+        let result = parse_enveloped_data::<Infallible>(&data);
+        assert!(matches!(result, Err(Error::Ber(_))));
+    }
+
+    #[test]
+    fn test_parse_enveloped_data_wrong_version() {
+        let data = vec![
+            0x30, 0x0f, // SEQUENCE (ContentInfo)
+            0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07,
+            0x03, // ID_ENVELOPED_DATA
+            0xa0, 0x03, // context [0]
+            0x30, 0x03, // SEQUENCE (EnvelopedData)
+            0x02, 0x01, 0x03, // INTEGER (wrong version)
+        ];
+        let result = parse_enveloped_data::<Infallible>(&data);
+        assert!(matches!(result, Err(Error::Version(3))));
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(DEFAULT_VSOCK_PROXY_PORT, 8000);
+        assert_eq!(DEFAULT_VSOCK_PROXY_CID, 3);
+        assert_eq!(ENVELOPED_DATA_VERSION, 2);
+        assert_eq!(ENVELOPED_DATA_RECIPIENT_VERSION, 2);
+    }
 
     const RSA_KEY: &str = "-----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEAwg8xlWTIwm44aLEqiA5lweHUSm2eeKwrTg3qEUhOVyGAo3eN
@@ -454,46 +573,68 @@ cJEGAbCDYhyjvtjBLNy7YDQ1hdmCnqMxg/5AIwUMkvTTRg+qepfboA==
 ";
 
     const CIPHER_TEXT_STR: &str = "MIAGCSqGSIb3DQEHA6CAMIACAQIxggFrMIIBZwIBAoAgljGgxlmRCtWqvB/s/Aw+ZNTDlc6Uka86SLVmlNmFGAMwPAYJKoZIhvcNAQEHMC+gDzANBglghkgBZQMEAgEFAKEcMBoGCSqGSIb3DQEBCDANBglghkgBZQMEAgEFAASCAQAXmjTiHpg+OcYaf2ISaDNpQcEOq61Sm3re3v+5z2hZPe8eoUGhmMS6pCuC+BRW7RpkjwDaXQzzR/jExnraEET3lj9oyAMMwKIahhHHIZ33qOTq1c/9NtMVZmm/j4UfyCpP8WMAFb2hvwIJbjnAGO9Xbw+NzWaQdvEyNDGUX+bPIuSDc75jjGH5KtdFLopk5k6nsTdU26qLkVE6Mg9Y//s0OJCvmYFgfw15IXDb50xJupWxCwbqGXWmfTBEo9M9AhelVbOXkitZR7hbnT6BZnsfpS2acZRNL4XxC+gg4Ml9fOiYsGWqSK8Lkwlp22rtL70CIHnggbb+oIE4ObR4TV8qMIAGCSqGSIb3DQEHATAdBglghkgBZQMEASoEEEMr/6uiZK+CzgfJvr61JTGggAQwfp0W0Q/QPYmg6AoC3DkE5+beNswVOX9ct5IIgIsvaAhTF9IiHdbX7yLa8YS2WQ/FAAAAAAAAAAAAAA==";
-    let cipher_text = STANDARD.decode(CIPHER_TEXT_STR).unwrap();
 
-    let data = parse_enveloped_data::<Infallible>(&cipher_text).unwrap();
-    assert_eq!(
-        data,
-        ParsedEnvelopedData {
-            cipher_key: vec![
-                23, 154, 52, 226, 30, 152, 62, 57, 198, 26, 127, 98, 18, 104, 51, 105, 65, 193, 14,
-                171, 173, 82, 155, 122, 222, 222, 255, 185, 207, 104, 89, 61, 239, 30, 161, 65,
-                161, 152, 196, 186, 164, 43, 130, 248, 20, 86, 237, 26, 100, 143, 0, 218, 93, 12,
-                243, 71, 248, 196, 198, 122, 218, 16, 68, 247, 150, 63, 104, 200, 3, 12, 192, 162,
-                26, 134, 17, 199, 33, 157, 247, 168, 228, 234, 213, 207, 253, 54, 211, 21, 102,
-                105, 191, 143, 133, 31, 200, 42, 79, 241, 99, 0, 21, 189, 161, 191, 2, 9, 110, 57,
-                192, 24, 239, 87, 111, 15, 141, 205, 102, 144, 118, 241, 50, 52, 49, 148, 95, 230,
-                207, 34, 228, 131, 115, 190, 99, 140, 97, 249, 42, 215, 69, 46, 138, 100, 230, 78,
-                167, 177, 55, 84, 219, 170, 139, 145, 81, 58, 50, 15, 88, 255, 251, 52, 56, 144,
-                175, 153, 129, 96, 127, 13, 121, 33, 112, 219, 231, 76, 73, 186, 149, 177, 11, 6,
-                234, 25, 117, 166, 125, 48, 68, 163, 211, 61, 2, 23, 165, 85, 179, 151, 146, 43,
-                89, 71, 184, 91, 157, 62, 129, 102, 123, 31, 165, 45, 154, 113, 148, 77, 47, 133,
-                241, 11, 232, 32, 224, 201, 125, 124, 232, 152, 176, 101, 170, 72, 175, 11, 147, 9,
-                105, 219, 106, 237, 47, 189, 2, 32, 121, 224, 129, 182, 254, 160, 129, 56, 57, 180,
-                120, 77, 95, 42
-            ],
-            iv: vec![67, 43, 255, 171, 162, 100, 175, 130, 206, 7, 201, 190, 190, 181, 37, 49],
-            cipher_text: vec![
-                126, 157, 22, 209, 15, 208, 61, 137, 160, 232, 10, 2, 220, 57, 4, 231, 230, 222,
-                54, 204, 21, 57, 127, 92, 183, 146, 8, 128, 139, 47, 104, 8, 83, 23, 210, 34, 29,
-                214, 215, 239, 34, 218, 241, 132, 182, 89, 15, 197
+    #[test]
+    fn test_parse_and_decrypt() {
+        let cipher_text = STANDARD.decode(CIPHER_TEXT_STR).unwrap();
+
+        let data = parse_enveloped_data::<Infallible>(&cipher_text).unwrap();
+        assert_eq!(
+            data,
+            ParsedEnvelopedData {
+                cipher_key: vec![
+                    23, 154, 52, 226, 30, 152, 62, 57, 198, 26, 127, 98, 18, 104, 51, 105, 65, 193,
+                    14, 171, 173, 82, 155, 122, 222, 222, 255, 185, 207, 104, 89, 61, 239, 30, 161,
+                    65, 161, 152, 196, 186, 164, 43, 130, 248, 20, 86, 237, 26, 100, 143, 0, 218,
+                    93, 12, 243, 71, 248, 196, 198, 122, 218, 16, 68, 247, 150, 63, 104, 200, 3,
+                    12, 192, 162, 26, 134, 17, 199, 33, 157, 247, 168, 228, 234, 213, 207, 253, 54,
+                    211, 21, 102, 105, 191, 143, 133, 31, 200, 42, 79, 241, 99, 0, 21, 189, 161,
+                    191, 2, 9, 110, 57, 192, 24, 239, 87, 111, 15, 141, 205, 102, 144, 118, 241,
+                    50, 52, 49, 148, 95, 230, 207, 34, 228, 131, 115, 190, 99, 140, 97, 249, 42,
+                    215, 69, 46, 138, 100, 230, 78, 167, 177, 55, 84, 219, 170, 139, 145, 81, 58,
+                    50, 15, 88, 255, 251, 52, 56, 144, 175, 153, 129, 96, 127, 13, 121, 33, 112,
+                    219, 231, 76, 73, 186, 149, 177, 11, 6, 234, 25, 117, 166, 125, 48, 68, 163,
+                    211, 61, 2, 23, 165, 85, 179, 151, 146, 43, 89, 71, 184, 91, 157, 62, 129, 102,
+                    123, 31, 165, 45, 154, 113, 148, 77, 47, 133, 241, 11, 232, 32, 224, 201, 125,
+                    124, 232, 152, 176, 101, 170, 72, 175, 11, 147, 9, 105, 219, 106, 237, 47, 189,
+                    2, 32, 121, 224, 129, 182, 254, 160, 129, 56, 57, 180, 120, 77, 95, 42
+                ],
+                iv: vec![67, 43, 255, 171, 162, 100, 175, 130, 206, 7, 201, 190, 190, 181, 37, 49],
+                cipher_text: vec![
+                    126, 157, 22, 209, 15, 208, 61, 137, 160, 232, 10, 2, 220, 57, 4, 231, 230,
+                    222, 54, 204, 21, 57, 127, 92, 183, 146, 8, 128, 139, 47, 104, 8, 83, 23, 210,
+                    34, 29, 214, 215, 239, 34, 218, 241, 132, 182, 89, 15, 197
+                ]
+            }
+        );
+
+        let private_key = rsa::RsaPrivateKey::from_pkcs1_pem(RSA_KEY).unwrap();
+        let result = decrypt_cfr::<Infallible>(&data, &private_key).unwrap();
+        assert_eq!(
+            result,
+            vec![
+                0x3b, 0xe8, 0x2c, 0x44, 0xf, 0x6, 0xcb, 0x4d, 0x44, 0xc4, 0xc2, 0xec, 0x3b, 0xf3,
+                0xd, 0x47, 0x24, 0x7, 0xd3, 0xa9, 0x12, 0x5a, 0xa4, 0xc1, 0x84, 0x2b, 0x98, 0xf6,
+                0xbd, 0xd2, 0x6e, 0x41,
             ]
-        }
-    );
+        );
+    }
 
-    let private_key = rsa::RsaPrivateKey::from_pkcs1_pem(RSA_KEY).unwrap();
-    let result = decrypt_cfr::<Infallible>(&data, &private_key).unwrap();
-    assert_eq!(
-        result,
-        vec![
-            0x3b, 0xe8, 0x2c, 0x44, 0xf, 0x6, 0xcb, 0x4d, 0x44, 0xc4, 0xc2, 0xec, 0x3b, 0xf3, 0xd,
-            0x47, 0x24, 0x7, 0xd3, 0xa9, 0x12, 0x5a, 0xa4, 0xc1, 0x84, 0x2b, 0x98, 0xf6, 0xbd,
-            0xd2, 0x6e, 0x41,
-        ]
-    );
+    #[test]
+    fn test_decrypt_cfr_invalid_key_size() {
+        use rsa::pkcs1::DecodeRsaPrivateKey;
+
+        let private_key = RsaPrivateKey::from_pkcs1_pem(RSA_KEY).unwrap();
+
+        // Create data with wrong key size (16 bytes instead of 32)
+        let data = ParsedEnvelopedData {
+            cipher_key: vec![0u8; 16],
+            iv: vec![0u8; 16],
+            cipher_text: vec![0u8; 16],
+        };
+
+        // This should fail because cipher_key is encrypted and wrong size
+        let result = decrypt_cfr::<Infallible>(&data, &private_key);
+        assert!(result.is_err());
+    }
 }

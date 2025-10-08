@@ -29,3 +29,4 @@ serde_repr = "0.1.20"
 futures = "0.3"
 tokio = { version = "1.42", features = ["net", "macros", "rt"] }
 tokio-macros = "2.4"
+serde_json = "1.0"

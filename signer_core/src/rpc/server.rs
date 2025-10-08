@@ -231,3 +231,173 @@ where
         .map_err(Into::into)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Server;
+    use crate::crypto::{KeyType, PrivateKey, SigningVersion};
+    use crate::rpc::client::Client;
+    use crate::tests::{DummyCredentials, Passthrough, PassthroughFactory};
+    use crate::{macros::unwrap_as, EncryptedSigner};
+    use tokio::net::UnixStream;
+
+    #[tokio::test]
+    async fn test_server_double_initialization() {
+        let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+        let mut server: Server<PassthroughFactory, EncryptedSigner<Passthrough>, rand_core::OsRng> =
+            Server::new(PassthroughFactory, rand_core::OsRng);
+
+        let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+
+        futures::join!(
+            async move {
+                server.serve_connection(srv_sock).await.unwrap();
+            },
+            async move {
+                client.initialize(DummyCredentials {}).await.unwrap();
+                let err = client.initialize(DummyCredentials {}).await.unwrap_err();
+                let rpc_err = unwrap_as!(err, crate::rpc::client::Error::RPC);
+                assert_eq!(rpc_err.message, "already initialized");
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_server_operations_before_initialization() {
+        let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+        let mut server: Server<PassthroughFactory, EncryptedSigner<Passthrough>, rand_core::OsRng> =
+            Server::new(PassthroughFactory, rand_core::OsRng);
+
+        let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+
+        futures::join!(
+            async move {
+                server.serve_connection(srv_sock).await.unwrap();
+            },
+            async move {
+                // Test Import
+                let err = client.import(&[0u8; 32]).await.unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test ImportUnencrypted
+                let key = PrivateKey::generate(KeyType::Ed25519, &mut rand_core::OsRng).unwrap();
+                let err = client.import_unencrypted(&key).await.unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test GenerateAndImport
+                let err = client
+                    .generate_and_import(KeyType::Secp256k1)
+                    .await
+                    .unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test Generate
+                let err = client.generate(KeyType::Secp256k1).await.unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test Sign
+                let err = client
+                    .try_sign(0, b"data", SigningVersion::Latest)
+                    .await
+                    .unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test SignWith
+                let err = client
+                    .try_sign_with(&[0u8; 32], b"data", SigningVersion::Latest)
+                    .await
+                    .unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test PublicKey
+                let err = client.public_key(0).await.unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test PublicKeyFrom
+                let err = client.public_key_from(&[0u8; 32]).await.unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+
+                // Test ProvePossession
+                let err = client.proof_of_possession(0).await.unwrap_err();
+                assert_eq!(
+                    unwrap_as!(err, crate::rpc::client::Error::RPC).message,
+                    "uninitialized"
+                );
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_server_invalid_cbor_request() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (srv_sock, mut client_sock) = UnixStream::pair().unwrap();
+        let mut server: Server<PassthroughFactory, EncryptedSigner<Passthrough>, rand_core::OsRng> =
+            Server::new(PassthroughFactory, rand_core::OsRng);
+
+        futures::join!(
+            async move {
+                server.serve_connection(srv_sock).await.unwrap();
+            },
+            async move {
+                // Send invalid CBOR data
+                let invalid_data = vec![0xFF, 0xFF, 0xFF, 0xFF];
+                let len = (invalid_data.len() as u32).to_be_bytes();
+                client_sock.write_all(&len).await.unwrap();
+                client_sock.write_all(&invalid_data).await.unwrap();
+
+                // Read response - should be an error response
+                let mut len_buf = [0u8; 4];
+                client_sock.read_exact(&mut len_buf).await.unwrap();
+                let response_len = u32::from_be_bytes(len_buf);
+
+                let mut response = vec![0u8; response_len as usize];
+                client_sock.read_exact(&mut response).await.unwrap();
+
+                // Should be able to deserialize as error result
+                use crate::TryFromCBOR;
+                let result = crate::rpc::Result::<()>::try_from_cbor(&response);
+                assert!(result.is_ok());
+                assert!(result.unwrap().is_err());
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_server_connection_closed() {
+        let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+        let mut server: Server<PassthroughFactory, EncryptedSigner<Passthrough>, rand_core::OsRng> =
+            Server::new(PassthroughFactory, rand_core::OsRng);
+
+        // Drop client socket to close connection
+        drop(client_sock);
+
+        // Server should handle gracefully
+        let result = server.serve_connection(srv_sock).await;
+        assert!(result.is_ok());
+    }
+}
