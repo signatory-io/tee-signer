@@ -21,11 +21,13 @@ jobs:
         rustflags: ""
     - name: Build
       run: cargo build --verbose
-    - name: Install tarpaulin
-      run: cargo install --features vendored-openssl cargo-tarpaulin
-    - name: Run tests with coverage
-      run: cargo tarpaulin --all-features --workspace --out html
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: Generate code coverage
+      run: |
+        cargo llvm-cov --all-features --workspace --html
+        mv target/llvm-cov/html ./coverage
     - uses: actions/upload-artifact@v4
       with:
         name: test-coverage-report
-        path: ./tarpaulin-report.html
+        path: ./coverage
