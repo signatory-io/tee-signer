@@ -52,23 +52,22 @@ impl Session {
             return Err(Error::EncryptionFailed);
         }
 
-        // let (r_info, w_info) = Self::compute_direction_info(local_eph_pubkey, remote_eph_pubkey);
-        let mut data = Self::compute_direction_info(local_eph_pubkey, remote_eph_pubkey);
+        let r_bytes = Self::compute_direction_info(local_eph_pubkey, remote_eph_pubkey)?;
+        let w_bytes = Self::compute_direction_info(remote_eph_pubkey, local_eph_pubkey)?;
 
         let mut hasher = Blake2b::<U32>::new();
         hasher.update(shared_secret);
         let prk = hasher.finalize();
 
         self.rd_length_key
-            .copy_from_slice(&Self::blake2b_derive(&prk, &data, TAG_LEN));
+            .copy_from_slice(&Self::blake2b_derive(&prk, &r_bytes, TAG_LEN));
         self.rd_payload_key =
-            *ChaCha20Poly1305Key::from_slice(&Self::blake2b_derive(&prk, &data, TAG_PAYLOAD));
+            *ChaCha20Poly1305Key::from_slice(&Self::blake2b_derive(&prk, &r_bytes, TAG_PAYLOAD));
 
-        data[0] ^= 1;
         self.wr_length_key
-            .copy_from_slice(&Self::blake2b_derive(&prk, &data, TAG_LEN));
+            .copy_from_slice(&Self::blake2b_derive(&prk, &w_bytes, TAG_LEN));
         self.wr_payload_key =
-            *ChaCha20Poly1305Key::from_slice(&Self::blake2b_derive(&prk, &data, TAG_PAYLOAD));
+            *ChaCha20Poly1305Key::from_slice(&Self::blake2b_derive(&prk, &w_bytes, TAG_PAYLOAD));
 
         self.read_nonce = 0;
         self.write_nonce = 0;
@@ -77,28 +76,20 @@ impl Session {
         Ok(())
     }
 
-    fn compute_direction_info(local: &[u8], remote: &[u8]) -> [u8; CHACHA20_KEY_SIZE + 1] {
-        let mut data = [0u8; CHACHA20_KEY_SIZE + 1];
-
-        let mut borrow = 0i16;
-        let mut is_negative = false;
-
-        for i in (0..CHACHA20_KEY_SIZE).rev() {
-            let l = local[i] as i16;
-            let r = remote[i] as i16;
-            let diff = l - r - borrow;
-            data[i + 1] = (diff & 0xFF) as u8;
-            borrow = if diff < 0 {
-                is_negative = true;
-                1
-            } else {
-                is_negative = false;
-                0
-            }
+    fn compute_direction_info(dest: &[u8], src: &[u8]) -> Result<[u8; CHACHA20_KEY_SIZE], Error> {
+        if dest.len() != src.len() {
+            return Err(Error::InvalidKeyLength);
         }
 
-        data[0] = is_negative as u8;
-        data
+        let mut info = [0u8; CHACHA20_KEY_SIZE];
+        let mut borrow = 0i16;
+        for i in (0..CHACHA20_KEY_SIZE).rev() {
+            let diff = (dest[i] as i16) - (src[i] as i16) - borrow;
+            info[i] = (diff & 0xFF) as u8;
+            borrow = (diff < 0) as i16;
+        }
+
+        Ok(info)
     }
 
     fn blake2b_derive(prk: &GenericArray<u8, U32>, info: &[u8], tag: &[u8]) -> [u8; 32] {
