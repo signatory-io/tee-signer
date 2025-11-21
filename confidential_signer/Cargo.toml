@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 # Workspace/local dependencies
 signer_core = { path = "../signer_core" }
+log = "0.4.28"
+log4rs = "1.4.0"
 
 # Crypto
 p256 = "0.13.2"

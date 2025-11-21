@@ -1,4 +1,5 @@
 use crate::nsm::{self, SharedNSM};
+use nitro_signer::log::{error, info};
 use nitro_signer::{
     aws_config,
     kms_client::{self, ClientFactory},
@@ -91,7 +92,7 @@ impl App {
         let listener = vsock::asio::Listener::bind(&listen_addr)?;
         loop {
             let (conn, addr) = listener.accept().await?;
-            println!("incoming connection from {}", addr);
+            info!("incoming connection from {}", addr);
 
             let ccfg = client_conf.clone();
             let secm = self.secm.clone();
@@ -101,7 +102,7 @@ impl App {
                 let mut srv = Server::new(cf, secm);
 
                 if let Err(err) = srv.serve_connection(conn).await {
-                    eprintln!("{}", err);
+                    error!("{}", err);
                 }
             });
         }

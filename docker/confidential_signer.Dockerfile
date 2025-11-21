@@ -38,5 +38,6 @@ EXPOSE ${LISTEN_PORT}
 
 ENV LISTEN_PORT=${LISTEN_PORT}
 
+LABEL tee.launch_policy.allow_env_override="SERVER_KEYPAIR,AUTHORIZED_KEYS"
 
 CMD ["/confidential_signer_app"]

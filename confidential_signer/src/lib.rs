@@ -1,5 +1,8 @@
 pub mod error;
 pub mod kms_client;
+pub use base64;
+pub use log;
+pub use log4rs;
 pub use rand_core;
 pub use signer_core;
 use signer_core::EncryptedSigner;

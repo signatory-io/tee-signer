@@ -1,9 +1,9 @@
+use confidential_signer::log::error;
 use confidential_signer::{
     rand_core,
     signer_core::{EncryptionBackend, EncryptionBackendFactory, rpc::server::Server},
     tokio,
 };
-// use hyper_rustls::TlsAcceptor;
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, io, net::SocketAddr};
 
@@ -69,7 +69,7 @@ impl App {
                 let mut srv = Server::new(PassthroughFactory, rand_core::OsRng);
                 // Serve connection
                 if let Err(err) = srv.serve_connection(conn).await {
-                    eprintln!("{}", err);
+                    error!("{}", err);
                 }
             });
         }

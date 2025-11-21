@@ -3,10 +3,13 @@ use crate::{
     EncryptedSigner, EncryptionBackend, EncryptionBackendFactory, Error as SignerError,
     TryFromCBOR, TryIntoCBOR,
 };
+use log::error;
 use rand_core::CryptoRngCore;
 use serde::de::DeserializeOwned;
 use std::io;
-use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+const MAX_BUFFER_SIZE: usize = 65536;
 
 #[derive(Debug)]
 pub enum StateError {
@@ -103,8 +106,11 @@ where
                     Err(err.into())
                 };
             }
-            let len = u32::from_be_bytes(len_buf);
-            buf.resize(len as usize, 0);
+            let len = u32::from_be_bytes(len_buf) as usize;
+            if len > MAX_BUFFER_SIZE {
+                break Ok(());
+            }
+            buf.resize(len, 0);
             sock.read_exact(&mut buf).await?;
 
             self.handle_message(&mut buf).await?;
@@ -117,6 +123,34 @@ where
         }
     }
 
+    pub async fn serve_connection_secure<T>(&mut self, sock: T) -> Result<(), Error>
+    where
+        T: AsyncRead + AsyncWrite + Unpin,
+    {
+        let mut encrypted = sock;
+        let mut len_buf = [0_u8; 4];
+        let mut buf = Vec::<u8>::new();
+
+        loop {
+            if let Err(err) = encrypted.read_exact(&mut len_buf).await {
+                break if err.kind() == io::ErrorKind::UnexpectedEof {
+                    Ok(())
+                } else {
+                    Err(err.into())
+                };
+            }
+            let len = u32::from_be_bytes(len_buf) as usize;
+            if len > MAX_BUFFER_SIZE {
+                break Ok(());
+            }
+            buf.resize(len, 0);
+            encrypted.read_exact(&mut buf).await?;
+            self.handle_message(&mut buf).await?;
+
+            encrypted.write_all(&buf).await?;
+        }
+    }
+
     async fn handle_message(&mut self, buf: &mut Vec<u8>) -> Result<(), Error> {
         let req = Request::<F::Credentials>::try_from_cbor(buf);
         buf.clear();
@@ -125,7 +159,7 @@ where
             Ok(req) => req,
             Err(err) => {
                 // return deserialization error to the client
-                println!("invalid request: {}", err);
+                error!("invalid request: {}", err);
                 return RPCResult::<()>::Err(err.into())
                     .try_into_writer(buf)
                     .map_err(Into::into)

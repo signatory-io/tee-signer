@@ -1,4 +1,6 @@
 pub use aws_config;
+pub use log;
+pub use log4rs;
 pub use rand_core;
 pub use rsa;
 pub use signer_core;

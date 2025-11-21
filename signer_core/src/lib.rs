@@ -7,6 +7,7 @@ use std::future::Future;
 
 pub mod crypto;
 pub mod rpc;
+pub mod secure;
 pub(crate) mod serde_helper;
 
 use serde_helper::bytes;

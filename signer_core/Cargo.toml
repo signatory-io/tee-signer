@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+log = "0.4.28"
 vsock = { path = "../vsock" }
 tokio = { version = "1.42", features = ["net", "io-util"] }
 ecdsa = { version = "0.16", features = ["serde"] }
@@ -12,6 +13,7 @@ ed25519-dalek = { version = "2.1", features = ["serde", "rand_core"] }
 k256 = "0.13"
 p256 = "0.13"
 serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11"
 signature = "2.2"
 elliptic-curve = { version = "0.13", features = ["serde"] }
 generic-array = { version = "0.14", features = ["serde"] }
@@ -24,6 +26,11 @@ num = "0.4"
 blake2 = "0.10"
 format-bytes = "0.3.0"
 serde_repr = "0.1.20"
+chacha20poly1305 = "0.10"
+chacha20 = "0.9"
+x25519-dalek = "2.0"
+zeroize = { version = "1.8", features = ["derive"] }
+base64 = "0.22.1"
 
 [dev-dependencies]
 futures = "0.3"

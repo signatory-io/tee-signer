@@ -1,3 +1,4 @@
+use nitro_signer::log::error;
 use nitro_signer::{
     rand_core,
     signer_core::{rpc::server::Server, EncryptionBackend, EncryptionBackendFactory},
@@ -64,7 +65,7 @@ impl App {
                 let mut srv = Server::new(PassthroughFactory, rand_core::OsRng);
 
                 if let Err(err) = srv.serve_connection(conn).await {
-                    eprintln!("{}", err);
+                    error!("{}", err);
                 }
             });
         }
