@@ -15,10 +15,10 @@ aws-smithy-runtime-api = { version = "1.7", features = ["client"] }
 rand_core = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 
-# aws-smithy-runtime will lock versions
-hyper = { version = "*", features = ["client", "http1", "http2"] }
-hyper-rustls = { version = "*", features = ["webpki-roots"] }
-rustls = { version = "*" }
+# pinned to match aws-smithy-runtime's hyper_014 adapter
+hyper = { version = "0.14", features = ["client", "http1", "http2"] }
+hyper-rustls = { version = "0.24", features = ["webpki-roots"] }
+rustls = { version = "0.21" }
 
 tokio = { version = "1.42", features = ["full"] }
 tokio-macros = "2.4"
