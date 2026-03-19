@@ -170,13 +170,7 @@ impl AsRawFd for Datagram {
 pub struct Stream(AsyncFd<SyncStream>);
 
 fn is_in_progress(err: &Error) -> bool {
-    match err.raw_os_error() {
-        Some(code) => match code {
-            libc::EINPROGRESS | libc::EALREADY => true,
-            _ => false,
-        },
-        None => false,
-    }
+    matches!(err.raw_os_error(), Some(libc::EINPROGRESS | libc::EALREADY))
 }
 
 impl Stream {
@@ -193,7 +187,7 @@ impl Stream {
                 if let Some(err) = sock.0.get_ref().take_error()? {
                     break Err(err);
                 }
-                if let Ok(_) = sock.0.get_ref().peer_addr() {
+                if sock.0.get_ref().peer_addr().is_ok() {
                     break Ok(sock);
                 }
             },

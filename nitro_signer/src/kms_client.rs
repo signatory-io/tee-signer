@@ -139,7 +139,7 @@ fn parse_enveloped_data<A>(src: &[u8]) -> Result<ParsedEnvelopedData, Error<A>> 
     let wrap = content_info
         .get_elem(
             &mut stream,
-            Some(0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC),
+            Some(ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC),
         )
         .expect_some()?;
     // EnvelopedData
@@ -154,7 +154,7 @@ fn parse_enveloped_data<A>(src: &[u8]) -> Result<ParsedEnvelopedData, Error<A>> 
     // skip OriginatorInfo
     if let Some(oi) = contents.get_optional(
         &mut stream,
-        0 | ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC,
+        ale::ASN1_CONSTRUCTED | ale::ASN1_CONTEXT_SPECIFIC,
     )? {
         oi.consume(&mut stream)?;
     }
@@ -230,7 +230,7 @@ fn parse_enveloped_data<A>(src: &[u8]) -> Result<ParsedEnvelopedData, Error<A>> 
     let encrypted_content = encrypted_content_info
         .get_elem(&mut stream, None)
         .expect_some()?;
-    let cipher_text = if encrypted_content.tag == 0 | ale::ASN1_CONTEXT_SPECIFIC {
+    let cipher_text = if encrypted_content.tag == ale::ASN1_CONTEXT_SPECIFIC {
         Vec::from(encrypted_content.get_bytes(&mut stream)?)
     } else if encrypted_content.tag & ale::ASN1_CONSTRUCTED != 0 {
         let mut data: Vec<u8> = Vec::with_capacity(stream.len());

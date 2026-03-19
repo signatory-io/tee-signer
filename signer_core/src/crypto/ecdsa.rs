@@ -142,7 +142,7 @@ where
     type Error = signature::Error;
 
     fn public_key(&self) -> Self::PublicKey {
-        VerifyingKey(self.verifying_key().clone())
+        VerifyingKey(*self.verifying_key())
     }
     fn try_sign(
         &self,
@@ -180,7 +180,7 @@ where
     where
         S: serde::Serializer,
     {
-        serializer.serialize_bytes(&self.0.to_encoded_point(true).as_bytes())
+        serializer.serialize_bytes(self.0.to_encoded_point(true).as_bytes())
     }
 }
 

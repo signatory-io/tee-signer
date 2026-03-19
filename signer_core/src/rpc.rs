@@ -46,10 +46,7 @@ impl<T: std::error::Error> From<T> for Error {
     fn from(value: T) -> Self {
         Error {
             message: value.to_string(),
-            source: match value.source() {
-                Some(s) => Some(Box::new(Self::from(s))),
-                None => None,
-            },
+            source: value.source().map(|s| Box::new(Self::from(s))),
         }
     }
 }

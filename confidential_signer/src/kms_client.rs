@@ -17,15 +17,16 @@ pub struct Credentials {
     pub encryption_key_path: String,
 }
 
+#[derive(Default)]
 pub struct ClientFactory {}
 
 impl ClientFactory {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
-const CONFIDENTIAL_CONFIG_STR: &'static str = r#"{{
+const CONFIDENTIAL_CONFIG_STR: &str = r#"{{
     "type": "external_account",
     "audience": "//iam.googleapis.com/{wip_provider_path}",
     "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
@@ -51,7 +52,7 @@ impl EncryptionBackend for Client {
             .set_plaintext(tonic::codegen::Bytes::from(src.to_vec()))
             .send()
             .await
-            .map_err(|e| error::Error::Encryption(e))?;
+            .map_err(error::Error::Encryption)?;
         Ok(response.ciphertext.into())
     }
 
@@ -63,7 +64,7 @@ impl EncryptionBackend for Client {
             .set_ciphertext(tonic::codegen::Bytes::from(src.to_vec()))
             .send()
             .await
-            .map_err(|e| error::Error::Decryption(e))?;
+            .map_err(error::Error::Decryption)?;
         Ok(response.plaintext.into())
     }
 }

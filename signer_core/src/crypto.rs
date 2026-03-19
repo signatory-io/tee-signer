@@ -44,19 +44,14 @@ pub enum KeyType {
     Bls,
 }
 
-#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum SigningVersion {
     V0 = 0,
     V1,
     V2,
+    #[default]
     Latest = 255,
-}
-
-impl Default for SigningVersion {
-    fn default() -> Self {
-        SigningVersion::Latest
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -118,7 +113,7 @@ impl KeyPair for ed25519_dalek::SigningKey {
     type Error = ed25519::signature::Error;
 
     fn public_key(&self) -> Self::PublicKey {
-        self.verifying_key().clone()
+        self.verifying_key()
     }
     fn try_sign(
         &self,
@@ -127,7 +122,7 @@ impl KeyPair for ed25519_dalek::SigningKey {
     ) -> Result<Self::Signature, Self::Error> {
         // Tezos uses Blake2b pre-hashing in conjunction with regular Ed25519/SHA512
         let d = Blake2b256::digest(msg);
-        Ok(Signer::try_sign(self, &d)?)
+        Signer::try_sign(self, &d)
     }
 }
 
@@ -199,8 +194,7 @@ impl KeyPair for PrivateKey {
                 .map(Into::into)
                 .map_err(Into::into),
             PrivateKey::Bls(val) => val.try_sign(msg, version)
-                .map(Into::into)
-                .map_err(Into::into),
+                .map(Into::into),
         }
     }
 
@@ -221,8 +215,7 @@ impl PossessionProver for PrivateKey {
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
         match self {
             PrivateKey::Bls(val) => val.try_prove()
-                .map(Into::into)
-                .map_err(Into::into),
+                .map(Into::into),
             _ => Err(Error::PopUnsupported),
         }
     }
@@ -303,13 +296,14 @@ impl From<bls::Error> for Error {
     }
 }
 
+#[derive(Default)]
 pub struct Keychain {
     keys: Vec<PrivateKey>,
 }
 
 impl Keychain {
     pub fn new() -> Self {
-        Keychain { keys: Vec::new() }
+        Self::default()
     }
 
     pub fn import(&mut self, src: PrivateKey) -> usize {

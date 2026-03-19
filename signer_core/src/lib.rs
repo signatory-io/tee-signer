@@ -170,7 +170,7 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
     async fn decrypt(&self, src: &[u8]) -> Result<PrivateKey, Error<E::Error>> {
         match self.enc.decrypt(src).await {
             Ok(decrypted) => Ok(PrivateKey::try_from_cbor(&decrypted[..])?),
-            Err(err) => return Err(Error::Encryption(err)),
+            Err(err) => Err(Error::Encryption(err)),
         }
     }
 
