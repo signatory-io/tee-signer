@@ -25,6 +25,9 @@ blake2 = "0.10"
 format-bytes = "0.3.0"
 serde_repr = "0.1.20"
 
+[features]
+test-utils = []
+
 [dev-dependencies]
 futures = "0.3"
 tokio = { version = "1.42", features = ["net", "macros", "rt"] }

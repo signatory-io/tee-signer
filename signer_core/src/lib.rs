@@ -6,6 +6,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::future::Future;
 
 pub mod crypto;
+#[cfg(feature = "test-utils")]
+pub mod mock;
 pub mod rpc;
 pub(crate) mod serde_helper;
 

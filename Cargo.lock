@@ -845,7 +845,7 @@ dependencies = [
  "clap",
  "clap_derive",
  "confidential_signer",
- "serde",
+ "signer_core",
 ]
 
 [[package]]
@@ -2214,7 +2214,7 @@ dependencies = [
  "clap",
  "clap_derive",
  "nitro_signer",
- "serde",
+ "signer_core",
 ]
 
 [[package]]
