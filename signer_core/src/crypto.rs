@@ -198,7 +198,9 @@ impl KeyPair for PrivateKey {
             PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg, version)
                 .map(Into::into)
                 .map_err(Into::into),
-            PrivateKey::Bls(val) => Ok(val.try_sign(msg, version).unwrap().into()),
+            PrivateKey::Bls(val) => val.try_sign(msg, version)
+                .map(Into::into)
+                .map_err(Into::into),
         }
     }
 
@@ -218,7 +220,9 @@ impl PossessionProver for PrivateKey {
 
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
         match self {
-            PrivateKey::Bls(val) => Ok(val.try_prove().unwrap().into()),
+            PrivateKey::Bls(val) => val.try_prove()
+                .map(Into::into)
+                .map_err(Into::into),
             _ => Err(Error::PopUnsupported),
         }
     }
