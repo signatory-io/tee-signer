@@ -104,6 +104,13 @@ where
                 };
             }
             let len = u32::from_be_bytes(len_buf);
+            if len > crate::rpc::MAX_MESSAGE_SIZE {
+                break Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("message size {} exceeds maximum {}", len, crate::rpc::MAX_MESSAGE_SIZE),
+                )
+                .into());
+            }
             buf.resize(len as usize, 0);
             sock.read_exact(&mut buf).await?;
 

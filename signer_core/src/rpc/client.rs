@@ -95,6 +95,13 @@ where
         self.socket.read_exact(&mut len_buf).await?;
         let len = u32::from_be_bytes(len_buf);
 
+        if len > crate::rpc::MAX_MESSAGE_SIZE {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("response size {} exceeds maximum {}", len, crate::rpc::MAX_MESSAGE_SIZE),
+            )
+            .into());
+        }
         self.buf.resize(len as usize, 0);
         self.socket.read_exact(&mut self.buf).await?;
 

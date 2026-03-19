@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub mod client;
 pub mod server;
 
+pub const MAX_MESSAGE_SIZE: u32 = 2 * 1024 * 1024;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request<C> {
     Initialize(C),
