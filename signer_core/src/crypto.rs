@@ -276,7 +276,7 @@ impl std::fmt::Display for Error {
             Error::Signature(_) => f.write_str("signature error"),
             Error::Bls(_) => f.write_str("BLST error"),
             Error::PopUnsupported => f.write_str("Proof of possession is not supported"),
-            Error::InvalidSigningVersion => f.write_str("Invalid signing     version"),
+            Error::InvalidSigningVersion => f.write_str("invalid signing version"),
         }
     }
 }

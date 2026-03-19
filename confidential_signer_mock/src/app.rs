@@ -3,7 +3,6 @@ use confidential_signer::{
     signer_core::{EncryptionBackend, EncryptionBackendFactory, rpc::server::Server},
     tokio,
 };
-// use hyper_rustls::TlsAcceptor;
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, io, net::SocketAddr};
 

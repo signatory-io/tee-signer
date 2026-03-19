@@ -146,7 +146,7 @@ where
         version: SigningVersion,
     ) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::Sign {
-            handle: handle,
+            handle,
             message: msg.into(),
             version,
         })
