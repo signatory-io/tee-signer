@@ -76,10 +76,11 @@ impl EncryptionBackendFactory for ClientFactory {
         &self,
         credentials: Self::Credentials,
     ) -> Result<Self::Output, <Self::Output as EncryptionBackend>::Error> {
-        // prepare credentials file
         let credentials_json_str =
-            strfmt!(CONFIDENTIAL_CONFIG_STR, wip_provider_path => credentials.wip_provider_path).unwrap();
-        let credentials_json = serde_json::from_str(&credentials_json_str).unwrap();
+            strfmt!(CONFIDENTIAL_CONFIG_STR, wip_provider_path => credentials.wip_provider_path)
+                .map_err(|e| error::Error::CredentialFormat(e.to_string()))?;
+        let credentials_json = serde_json::from_str(&credentials_json_str)
+            .map_err(|e| error::Error::CredentialFormat(e.to_string()))?;
         let client = KeyManagementService::builder()
             .with_credentials(external_account::Builder::new(credentials_json).build()?)
             .build()
