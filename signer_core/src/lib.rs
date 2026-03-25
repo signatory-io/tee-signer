@@ -240,6 +240,22 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
         Ok(self.decrypt(key_data).await?.try_sign(msg, version)?)
     }
 
+    pub fn try_sign_digest(
+        &self,
+        handle: usize,
+        digest: &[u8],
+    ) -> Result<Signature, Error<E::Error>> {
+        Ok(self.keychain.try_sign_digest(handle, digest)?)
+    }
+
+    pub async fn try_sign_digest_with(
+        &self,
+        key_data: &[u8],
+        digest: &[u8],
+    ) -> Result<Signature, Error<E::Error>> {
+        Ok(self.decrypt(key_data).await?.try_sign_digest(digest)?)
+    }
+
     pub async fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<E::Error>> {
         Ok(self.decrypt(key_data).await?.public_key())
     }
@@ -393,6 +409,29 @@ mod tests {
 
         unwrap_as!(res.public_key, PublicKey::Ed25519)
             .verify(&digest, &sig)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn signer_sign_digest_secp256k1() {
+        use signature::hazmat::PrehashVerifier;
+        let signer = EncryptedSigner::new(Passthrough);
+        let res = signer
+            .generate(KeyType::Secp256k1, &mut rand_core::OsRng)
+            .await
+            .unwrap();
+
+        let digest = Blake2b256::digest(b"text");
+        let sig = unwrap_as!(
+            signer
+                .try_sign_digest_with(&res.encrypted_private_key, &digest)
+                .await
+                .unwrap(),
+            Signature::Secp256k1
+        );
+
+        unwrap_as!(res.public_key, PublicKey::Secp256k1)
+            .verify_prehash(&digest, &*sig)
             .unwrap();
     }
 }
