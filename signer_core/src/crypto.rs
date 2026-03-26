@@ -131,6 +131,10 @@ impl KeyPair for ed25519_dalek::SigningKey {
         Ok(Signer::try_sign(self, &d)?)
     }
 
+    // Ed25519 is a full-message scheme: the digest is signed as a standard Ed25519
+    // message (SHA-512 hashing occurs internally per RFC 8032). Unlike ECDSA's
+    // sign_prehash, there is no way to bypass this. Verification must use standard
+    // Ed25519 verify, which applies the same internal SHA-512.
     fn try_sign_digest(&self, digest: &[u8]) -> Result<Self::Signature, Self::Error> {
         Signer::try_sign(self, digest)
     }
