@@ -17,7 +17,7 @@ pub struct Credentials {
     pub encryption_key_path: String,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ClientFactory {}
 
 impl ClientFactory {
