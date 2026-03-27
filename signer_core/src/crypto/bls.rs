@@ -257,6 +257,10 @@ impl KeyPair for SigningKey {
             }
         }
     }
+
+    fn try_sign_digest(&self, _digest: &[u8]) -> Result<Self::Signature, Self::Error> {
+        Err(crypto::Error::DigestSigningUnsupported)
+    }
 }
 
 impl PossessionProver for SigningKey {

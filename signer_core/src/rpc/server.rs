@@ -209,6 +209,25 @@ where
                 .try_into_writer(buf)
                 .and(Ok(())),
 
+            (Request::SignDigest { handle, digest }, Some(signer)) => signer
+                .try_sign_digest(handle, &digest)
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(())),
+
+            (
+                Request::SignDigestWith {
+                    encrypted_private_key: key_data,
+                    digest,
+                },
+                Some(signer),
+            ) => signer
+                .try_sign_digest_with(&key_data, &digest)
+                .await
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(())),
+
             (Request::PublicKey(handle), Some(signer)) => signer
                 .public_key(handle)
                 .map_err(RPCError::from)

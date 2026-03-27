@@ -28,6 +28,17 @@ pub enum Request<C> {
         message: Vec<u8>,
         version: SigningVersion,
     },
+    SignDigest {
+        handle: usize,
+        #[serde(with = "bytes")]
+        digest: Vec<u8>,
+    },
+    SignDigestWith {
+        #[serde(with = "bytes")]
+        encrypted_private_key: Vec<u8>,
+        #[serde(with = "bytes")]
+        digest: Vec<u8>,
+    },
     PublicKey(usize),
     PublicKeyFrom(#[serde(with = "bytes")] Vec<u8>),
     ProvePossession(usize),
@@ -105,6 +116,37 @@ mod tests {
                 let mut digest = Blake2b256::new();
                 digest.update(data);
                 pub_key.verify_digest(digest, &*sig).unwrap();
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_sign_digest_with_secp256k1() {
+        use signature::hazmat::PrehashVerifier;
+        let (srv_sock, client_sock) = UnixStream::pair().unwrap();
+        let mut server: Server<PassthroughFactory, EncryptedSigner<Passthrough>, rand_core::OsRng> =
+            Server::new(PassthroughFactory, rand_core::OsRng);
+
+        let mut client: Client<UnixStream, DummyCredentials> = Client::new(client_sock);
+
+        futures::join!(
+            async move {
+                server.serve_connection(srv_sock).await.unwrap();
+            },
+            async move {
+                client.initialize(DummyCredentials {}).await.unwrap();
+                let res = client.generate(KeyType::Secp256k1).await.unwrap();
+
+                let digest = Blake2b256::digest(b"text");
+                let sig = unwrap_as!(
+                    client
+                        .try_sign_digest_with(&res.encrypted_private_key, &digest)
+                        .await
+                        .unwrap(),
+                    Signature::Secp256k1
+                );
+                let pub_key = unwrap_as!(res.public_key, PublicKey::Secp256k1);
+                pub_key.verify_prehash(&digest, &*sig).unwrap();
             }
         );
     }
