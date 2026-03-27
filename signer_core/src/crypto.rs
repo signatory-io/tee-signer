@@ -1,7 +1,7 @@
 use blake2::{digest, Blake2b, Digest};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
-use serde_repr::Serialize_repr;
+use serde_repr::{Deserialize_repr, Serialize_repr};
 pub use signature::Error as SignatureError;
 use signature::{DigestSigner, Signer};
 use std::fmt::Debug;
