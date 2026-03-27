@@ -1,10 +1,6 @@
-use nitro_signer::{
-    rand_core,
-    signer_core::{rpc::server::Server, EncryptionBackend, EncryptionBackendFactory},
-    tokio,
-};
-use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, io, net::SocketAddr};
+use nitro_signer::{rand_core, tokio};
+use signer_core::{mock::PassthroughFactory, rpc::server::Server};
+use std::{io, net::SocketAddr};
 
 pub struct App {}
 
@@ -24,34 +20,6 @@ impl std::fmt::Display for Error {
         match self {
             Error::IO(error) => write!(f, "IO error: {}", error),
         }
-    }
-}
-
-#[derive(Debug)]
-struct Passthrough;
-
-impl EncryptionBackend for Passthrough {
-    type Error = Infallible;
-
-    async fn encrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        Ok(Vec::from(src))
-    }
-
-    async fn decrypt(&self, src: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        Ok(Vec::from(src))
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct DummyCredentials {} // serialized as empty object instead of null for unity
-
-struct PassthroughFactory;
-
-impl EncryptionBackendFactory for PassthroughFactory {
-    type Output = Passthrough;
-    type Credentials = DummyCredentials;
-    async fn try_new(&self, _cred: Self::Credentials) -> Result<Self::Output, Infallible> {
-        Ok(Passthrough)
     }
 }
 

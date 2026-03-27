@@ -266,7 +266,7 @@ impl Write for Datagram {
     }
 }
 
-impl<'a> Write for &'a Datagram {
+impl Write for &Datagram {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.0.send(buf)
     }
@@ -364,7 +364,7 @@ impl Write for Stream {
     }
 }
 
-impl<'a> Write for &'a Stream {
+impl Write for &Stream {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.0.send(buf)
     }

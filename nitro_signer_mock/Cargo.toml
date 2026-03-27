@@ -5,6 +5,6 @@ edition = "2021"
 
 [dependencies]
 nitro_signer = { path = "../nitro_signer" }
+signer_core = { path = "../signer_core", features = ["test-utils"] }
 clap = { version = "4.5", features = ["derive"] }
 clap_derive = "4.5"
-serde = { version = "1.0", features = ["derive"] }

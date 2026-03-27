@@ -6,6 +6,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::future::Future;
 
 pub mod crypto;
+#[cfg(feature = "test-utils")]
+pub mod mock;
 pub mod rpc;
 pub(crate) mod serde_helper;
 
@@ -168,7 +170,7 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
     async fn decrypt(&self, src: &[u8]) -> Result<PrivateKey, Error<E::Error>> {
         match self.enc.decrypt(src).await {
             Ok(decrypted) => Ok(PrivateKey::try_from_cbor(&decrypted[..])?),
-            Err(err) => return Err(Error::Encryption(err)),
+            Err(err) => Err(Error::Encryption(err)),
         }
     }
 

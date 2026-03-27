@@ -54,6 +54,11 @@ impl<'a> Stream<'a> {
     }
 
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[inline]
     fn get_bytes(&mut self, len: usize) -> Result<&'a [u8], Error> {
         if self.inner.len() < len {
             Err(Error::EOS)
@@ -66,7 +71,7 @@ impl<'a> Stream<'a> {
 
     #[inline]
     fn get_u8(&mut self) -> Result<u8, Error> {
-        if self.inner.len() < 1 {
+        if self.inner.is_empty() {
             Err(Error::EOS)
         } else {
             let v = self.inner[0];
@@ -207,10 +212,7 @@ impl Elem {
 
     #[inline]
     pub fn available(&self, stream: &Stream) -> Option<usize> {
-        match self.len {
-            Some(len) => Some(len - self.consumed(stream)),
-            None => None,
-        }
+        self.len.map(|len| len - self.consumed(stream))
     }
 
     pub fn get_elem(
@@ -274,7 +276,7 @@ impl Elem {
         if stream.peek_tag()? == expect {
             self.get_elem(stream, None)
         } else {
-            return Ok(None);
+            Ok(None)
         }
     }
 
@@ -333,7 +335,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::EOS => f.write_str("unexpected end of stream"),
             Error::ValueTooLarge => f.write_str("value is too large"),
-            Error::Encoding => f.write_str("invalid error"),
+            Error::Encoding => f.write_str("invalid encoding"),
             Error::Tag(tag) => write!(f, "unexpected tag: {:x}", tag),
             Error::Infinite => f.write_str("infinite length"),
             Error::Convert(err) => write!(f, "convert error: {}", err),
