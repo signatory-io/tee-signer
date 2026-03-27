@@ -107,7 +107,11 @@ where
             if len > crate::rpc::MAX_MESSAGE_SIZE {
                 break Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("message size {} exceeds maximum {}", len, crate::rpc::MAX_MESSAGE_SIZE),
+                    format!(
+                        "message size {} exceeds maximum {}",
+                        len,
+                        crate::rpc::MAX_MESSAGE_SIZE
+                    ),
                 )
                 .into());
             }

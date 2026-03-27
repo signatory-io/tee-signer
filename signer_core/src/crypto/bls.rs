@@ -258,8 +258,9 @@ impl KeyPair for SigningKey {
         }
     }
 
-    fn try_sign_digest(&self, _digest: &[u8]) -> Result<Self::Signature, Self::Error> {
-        Err(crypto::Error::DigestSigningUnsupported)
+    fn try_sign_digest(&self, digest: &[u8]) -> Result<Self::Signature, Self::Error> {
+        let cipher_suite: Vec<u8> = CipherSuite::Signature(2, Scheme::ProofOfPossession).into();
+        Ok(Signature(self.sign(digest, &cipher_suite, &[])))
     }
 }
 

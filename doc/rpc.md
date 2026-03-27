@@ -163,9 +163,9 @@ SignWithResult = Signature
 
 Sign a pre-hashed digest with the key stored under the specified index. Unlike `Sign`, no blockchain-specific hashing (e.g., Blake2b) is applied before signing.
 
-Supported key types: Secp256k1, NistP256, Ed25519. BLS returns an error (`DigestSigningUnsupported`) because BLS signs full messages via hash-to-curve.
+Supported key types: Secp256k1, NistP256, Ed25519, BLS.
 
-For ECDSA (Secp256k1, NistP256), the digest is used directly as the prehash input — no additional hashing occurs. For Ed25519, the digest is treated as a standard Ed25519 message (SHA-512 hashing occurs internally per RFC 8032); this is inherent to the algorithm.
+For ECDSA (Secp256k1, NistP256), the digest is used directly as the prehash input — no additional hashing occurs. For Ed25519, the digest is treated as a standard Ed25519 message (SHA-512 hashing occurs internally per RFC 8032). For BLS, the input is treated as a message and signed using the Eth2 proof-of-possession cipher suite (`BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`) with hash-to-curve applied internally.
 
 ```text
 SignDigestRequest = {

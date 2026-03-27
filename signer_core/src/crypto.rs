@@ -219,7 +219,10 @@ impl KeyPair for PrivateKey {
             PrivateKey::Ed25519(val) => KeyPair::try_sign_digest(val, digest)
                 .map(Into::into)
                 .map_err(Into::into),
-            PrivateKey::Bls(_) => Err(Error::DigestSigningUnsupported),
+            PrivateKey::Bls(val) => val
+                .try_sign_digest(digest)
+                .map(Into::into)
+                .map_err(Into::into),
         }
     }
 
@@ -284,7 +287,6 @@ pub enum Error {
     Bls(bls::Error),
     PopUnsupported,
     InvalidSigningVersion,
-    DigestSigningUnsupported,
 }
 
 impl std::fmt::Display for Error {
@@ -295,9 +297,6 @@ impl std::fmt::Display for Error {
             Error::Bls(_) => f.write_str("BLST error"),
             Error::PopUnsupported => f.write_str("Proof of possession is not supported"),
             Error::InvalidSigningVersion => f.write_str("invalid signing version"),
-            Error::DigestSigningUnsupported => {
-                f.write_str("digest signing is not supported for this key type")
-            }
         }
     }
 }
@@ -596,13 +595,17 @@ mod tests {
     }
 
     #[test]
-    fn keychain_sign_digest_bls_unsupported() {
+    fn keychain_sign_digest_bls() {
         let mut keychain = Keychain::new();
         let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
         let handle = keychain.import(pk);
 
-        let digest = Blake2b256::digest(b"text");
-        let err = keychain.try_sign_digest(handle, &digest).unwrap_err();
-        assert!(matches!(err, super::Error::DigestSigningUnsupported));
+        let msg = b"text";
+        let sig = unwrap_as!(
+            keychain.try_sign_digest(handle, msg).unwrap(),
+            Signature::Bls
+        );
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
+        pub_key.verify(msg, &sig, SigningVersion::V2).unwrap();
     }
 }
