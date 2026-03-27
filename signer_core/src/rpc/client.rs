@@ -98,7 +98,11 @@ where
         if len > crate::rpc::MAX_MESSAGE_SIZE {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("response size {} exceeds maximum {}", len, crate::rpc::MAX_MESSAGE_SIZE),
+                format!(
+                    "response size {} exceeds maximum {}",
+                    len,
+                    crate::rpc::MAX_MESSAGE_SIZE
+                ),
             )
             .into());
         }
