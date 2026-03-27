@@ -138,15 +138,16 @@ impl RngCore for SharedNSM {
     }
 
     fn try_fill_bytes(&mut self, mut dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        Ok(while dest.len() != 0 {
+        while !dest.is_empty() {
             let v = match self.0.get_random_vec() {
                 Ok(v) => v,
                 Err(err) => return Err(rand_core::Error::new(Box::new(err))),
             };
             let sz = std::cmp::min(v.len(), dest.len());
-            (&mut dest[..sz]).copy_from_slice(&v[..sz]);
+            dest[..sz].copy_from_slice(&v[..sz]);
             dest = &mut dest[sz..];
-        })
+        }
+        Ok(())
     }
 }
 
@@ -199,7 +200,7 @@ pub fn seed_rng(nsm: &NSM, mut bytes: usize) -> Result<(), Error> {
     let fd = fs::OpenOptions::new().write(true).open(DEV_RANDOM)?;
     while bytes != 0 {
         let chunk = nsm.get_random_vec()?;
-        if chunk.len() == 0 {
+        if chunk.is_empty() {
             return Err(Error::NSM(ErrorCode::InternalError));
         }
         let sz = cmp::min(chunk.len(), bytes);

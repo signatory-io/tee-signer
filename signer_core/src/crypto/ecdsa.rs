@@ -15,6 +15,7 @@ use elliptic_curve::{
 use generic_array::{typenum::Unsigned, ArrayLength};
 pub use k256::Secp256k1;
 pub use p256::NistP256;
+use signature::hazmat::PrehashSigner;
 use std::convert::Infallible;
 use subtle::CtOption;
 
@@ -135,14 +136,15 @@ where
     C: PrimeCurve + CurveArithmetic,
     Scalar<C>: Invert<Output = CtOption<Scalar<C>>> + SignPrimitive<C>,
     SignatureSize<C>: ArrayLength<u8>,
-    ecdsa::SigningKey<C>: DigestSigner<Blake2b256, ecdsa::Signature<C>>,
+    ecdsa::SigningKey<C>:
+        DigestSigner<Blake2b256, ecdsa::Signature<C>> + PrehashSigner<ecdsa::Signature<C>>,
 {
     type PublicKey = VerifyingKey<C>;
     type Signature = Signature<C>;
     type Error = signature::Error;
 
     fn public_key(&self) -> Self::PublicKey {
-        VerifyingKey(self.verifying_key().clone())
+        VerifyingKey(*self.verifying_key())
     }
     fn try_sign(
         &self,
@@ -152,6 +154,9 @@ where
         let mut d = Blake2b256::new();
         d.update(msg);
         Ok(Signature(self.0.try_sign_digest(d)?))
+    }
+    fn try_sign_digest(&self, digest: &[u8]) -> Result<Self::Signature, Self::Error> {
+        Ok(Signature(self.0.sign_prehash(digest)?))
     }
 }
 
@@ -180,7 +185,7 @@ where
     where
         S: serde::Serializer,
     {
-        serializer.serialize_bytes(&self.0.to_encoded_point(true).as_bytes())
+        serializer.serialize_bytes(self.0.to_encoded_point(true).as_bytes())
     }
 }
 

@@ -45,9 +45,9 @@ pub enum CipherSuite {
     ProofOfPossession(u8, Scheme),
 }
 
-impl Into<Vec<u8>> for CipherSuite {
-    fn into(self) -> Vec<u8> {
-        match self {
+impl From<CipherSuite> for Vec<u8> {
+    fn from(val: CipherSuite) -> Self {
+        match val {
             CipherSuite::Signature(g, scheme) => {
                 format_bytes!(b"BLS_SIG_BLS12381G{}_XMD:SHA-256_SSWU_RO_{}_", g, scheme)
             }
@@ -250,6 +250,10 @@ impl KeyPair for SigningKey {
             }
             _ => Err(crypto::Error::InvalidSigningVersion),
         }
+    }
+
+    fn try_sign_digest(&self, _digest: &[u8]) -> Result<Self::Signature, Self::Error> {
+        Err(crypto::Error::DigestSigningUnsupported)
     }
 }
 

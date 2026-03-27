@@ -104,6 +104,13 @@ where
                 };
             }
             let len = u32::from_be_bytes(len_buf);
+            if len > crate::rpc::MAX_MESSAGE_SIZE {
+                break Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("message size {} exceeds maximum {}", len, crate::rpc::MAX_MESSAGE_SIZE),
+                )
+                .into());
+            }
             buf.resize(len as usize, 0);
             sock.read_exact(&mut buf).await?;
 
@@ -204,6 +211,25 @@ where
                 Some(signer),
             ) => signer
                 .try_sign_with(&key_data, &msg, version)
+                .await
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(())),
+
+            (Request::SignDigest { handle, digest }, Some(signer)) => signer
+                .try_sign_digest(handle, &digest)
+                .map_err(RPCError::from)
+                .try_into_writer(buf)
+                .and(Ok(())),
+
+            (
+                Request::SignDigestWith {
+                    encrypted_private_key: key_data,
+                    digest,
+                },
+                Some(signer),
+            ) => signer
+                .try_sign_digest_with(&key_data, &digest)
                 .await
                 .map_err(RPCError::from)
                 .try_into_writer(buf)

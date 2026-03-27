@@ -95,6 +95,13 @@ where
         self.socket.read_exact(&mut len_buf).await?;
         let len = u32::from_be_bytes(len_buf);
 
+        if len > crate::rpc::MAX_MESSAGE_SIZE {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("response size {} exceeds maximum {}", len, crate::rpc::MAX_MESSAGE_SIZE),
+            )
+            .into());
+        }
         self.buf.resize(len as usize, 0);
         self.socket.read_exact(&mut self.buf).await?;
 
@@ -139,7 +146,7 @@ where
         version: SigningVersion,
     ) -> Result<Signature, Error> {
         self.round_trip::<Signature>(Request::Sign {
-            handle: handle,
+            handle,
             message: msg.into(),
             version,
         })
@@ -156,6 +163,30 @@ where
             encrypted_private_key: key_data.into(),
             message: msg.into(),
             version,
+        })
+        .await
+    }
+
+    pub async fn try_sign_digest(
+        &mut self,
+        handle: usize,
+        digest: &[u8],
+    ) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::SignDigest {
+            handle,
+            digest: digest.into(),
+        })
+        .await
+    }
+
+    pub async fn try_sign_digest_with(
+        &mut self,
+        key_data: &[u8],
+        digest: &[u8],
+    ) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::SignDigestWith {
+            encrypted_private_key: key_data.into(),
+            digest: digest.into(),
         })
         .await
     }

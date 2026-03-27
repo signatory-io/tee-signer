@@ -4,6 +4,7 @@ pub enum Error {
     Auth(google_cloud_gax::client_builder::Error),
     Encryption(google_cloud_gax::error::Error),
     Decryption(google_cloud_gax::error::Error),
+    CredentialFormat(String),
 }
 
 impl std::fmt::Display for Error {
@@ -13,6 +14,7 @@ impl std::fmt::Display for Error {
             Error::Auth(e) => write!(f, "Auth error: {}", e),
             Error::Encryption(e) => write!(f, "Encryption error: {}", e),
             Error::Decryption(e) => write!(f, "Decryption error: {}", e),
+            Error::CredentialFormat(msg) => write!(f, "Credential format error: {}", msg),
         }
     }
 }
@@ -24,6 +26,7 @@ impl std::error::Error for Error {
             Error::Auth(e) => Some(e),
             Error::Encryption(e) => Some(e),
             Error::Decryption(e) => Some(e),
+            Error::CredentialFormat(_) => None,
         }
     }
 }

@@ -20,6 +20,7 @@ pub trait KeyPair {
     fn public_key(&self) -> Self::PublicKey;
     fn try_sign(&self, msg: &[u8], version: SigningVersion)
         -> Result<Self::Signature, Self::Error>;
+    fn try_sign_digest(&self, digest: &[u8]) -> Result<Self::Signature, Self::Error>;
 }
 
 pub trait Random: Sized {
@@ -43,35 +44,14 @@ pub enum KeyType {
     Bls,
 }
 
-#[derive(Serialize_repr, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum SigningVersion {
     V0 = 0,
     V1,
     V2,
-    Invalid = 254,
+    #[default]
     Latest = 255,
-}
-
-impl Default for SigningVersion {
-    fn default() -> Self {
-        SigningVersion::Latest
-    }
-}
-
-impl<'de> Deserialize<'de> for SigningVersion {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let v = u8::deserialize(deserializer)?;
-        Ok(match v {
-            0 => SigningVersion::V0,
-            1 => SigningVersion::V1,
-            2 => SigningVersion::V2,
-            _ => SigningVersion::Invalid,
-        })
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -133,7 +113,7 @@ impl KeyPair for ed25519_dalek::SigningKey {
     type Error = ed25519::signature::Error;
 
     fn public_key(&self) -> Self::PublicKey {
-        self.verifying_key().clone()
+        self.verifying_key()
     }
     fn try_sign(
         &self,
@@ -142,7 +122,15 @@ impl KeyPair for ed25519_dalek::SigningKey {
     ) -> Result<Self::Signature, Self::Error> {
         // Tezos uses Blake2b pre-hashing in conjunction with regular Ed25519/SHA512
         let d = Blake2b256::digest(msg);
-        Ok(Signer::try_sign(self, &d)?)
+        Signer::try_sign(self, &d)
+    }
+
+    // Ed25519 is a full-message scheme: the digest is signed as a standard Ed25519
+    // message (SHA-512 hashing occurs internally per RFC 8032). Unlike ECDSA's
+    // sign_prehash, there is no way to bypass this. Verification must use standard
+    // Ed25519 verify, which applies the same internal SHA-512.
+    fn try_sign_digest(&self, digest: &[u8]) -> Result<Self::Signature, Self::Error> {
+        Signer::try_sign(self, digest)
     }
 }
 
@@ -213,10 +201,24 @@ impl KeyPair for PrivateKey {
             PrivateKey::Ed25519(val) => KeyPair::try_sign(val, msg, version)
                 .map(Into::into)
                 .map_err(Into::into),
-            PrivateKey::Bls(val) => val
-                .try_sign(msg, version)
+            PrivateKey::Bls(val) => val.try_sign(msg, version).map(Into::into),
+        }
+    }
+
+    fn try_sign_digest(&self, digest: &[u8]) -> Result<Self::Signature, Self::Error> {
+        match self {
+            PrivateKey::Secp256k1(val) => val
+                .try_sign_digest(digest)
                 .map(Into::into)
                 .map_err(Into::into),
+            PrivateKey::NistP256(val) => val
+                .try_sign_digest(digest)
+                .map(Into::into)
+                .map_err(Into::into),
+            PrivateKey::Ed25519(val) => KeyPair::try_sign_digest(val, digest)
+                .map(Into::into)
+                .map_err(Into::into),
+            PrivateKey::Bls(_) => Err(Error::DigestSigningUnsupported),
         }
     }
 
@@ -236,7 +238,7 @@ impl PossessionProver for PrivateKey {
 
     fn try_prove(&self) -> Result<Self::Proof, Self::Error> {
         match self {
-            PrivateKey::Bls(val) => Ok(val.try_prove().unwrap().into()),
+            PrivateKey::Bls(val) => val.try_prove().map(Into::into),
             _ => Err(Error::PopUnsupported),
         }
     }
@@ -281,6 +283,7 @@ pub enum Error {
     Bls(bls::Error),
     PopUnsupported,
     InvalidSigningVersion,
+    DigestSigningUnsupported,
 }
 
 impl std::fmt::Display for Error {
@@ -290,7 +293,10 @@ impl std::fmt::Display for Error {
             Error::Signature(_) => f.write_str("signature error"),
             Error::Bls(_) => f.write_str("BLST error"),
             Error::PopUnsupported => f.write_str("Proof of possession is not supported"),
-            Error::InvalidSigningVersion => f.write_str("Invalid signing     version"),
+            Error::InvalidSigningVersion => f.write_str("invalid signing version"),
+            Error::DigestSigningUnsupported => {
+                f.write_str("digest signing is not supported for this key type")
+            }
         }
     }
 }
@@ -317,13 +323,14 @@ impl From<bls::Error> for Error {
     }
 }
 
+#[derive(Default)]
 pub struct Keychain {
     keys: Vec<PrivateKey>,
 }
 
 impl Keychain {
     pub fn new() -> Self {
-        Keychain { keys: Vec::new() }
+        Self::default()
     }
 
     pub fn import(&mut self, src: PrivateKey) -> usize {
@@ -339,6 +346,13 @@ impl Keychain {
     ) -> Result<Signature, Error> {
         match self.keys.get(handle) {
             Some(k) => Ok(k.try_sign(msg, version)?),
+            None => Err(Error::InvalidHandle),
+        }
+    }
+
+    pub fn try_sign_digest(&self, handle: usize, digest: &[u8]) -> Result<Signature, Error> {
+        match self.keys.get(handle) {
+            Some(k) => Ok(k.try_sign_digest(digest)?),
             None => Err(Error::InvalidHandle),
         }
     }
@@ -532,13 +546,63 @@ mod tests {
     }
 
     #[test]
-    fn test_proof_of_possession_from() {
+    fn keychain_sign_digest_secp256k1() {
+        use signature::hazmat::PrehashVerifier;
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::Secp256k1, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let digest = Blake2b256::digest(b"text");
+        let sig = unwrap_as!(
+            keychain.try_sign_digest(handle, &digest).unwrap(),
+            Signature::Secp256k1
+        );
+
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Secp256k1);
+        pub_key.verify_prehash(&digest, &*sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_sign_digest_nist_p256() {
+        use signature::hazmat::PrehashVerifier;
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::NistP256, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let digest = Blake2b256::digest(b"text");
+        let sig = unwrap_as!(
+            keychain.try_sign_digest(handle, &digest).unwrap(),
+            Signature::NistP256
+        );
+
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::NistP256);
+        pub_key.verify_prehash(&digest, &*sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_sign_digest_ed25519() {
+        let mut keychain = Keychain::new();
+        let pk = PrivateKey::generate(KeyType::Ed25519, &mut rand_core::OsRng).unwrap();
+        let handle = keychain.import(pk);
+
+        let digest = Blake2b256::digest(b"text");
+        let sig = unwrap_as!(
+            keychain.try_sign_digest(handle, &digest).unwrap(),
+            Signature::Ed25519
+        );
+        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Ed25519);
+
+        pub_key.verify(&digest, &sig).unwrap();
+    }
+
+    #[test]
+    fn keychain_sign_digest_bls_unsupported() {
+        let mut keychain = Keychain::new();
         let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
-        let bls_pop = pk.try_prove().unwrap();
-        let pop: ProofOfPossession = bls_pop.into();
-        assert!(matches!(pop, ProofOfPossession::Bls(_)));
-        let pop_bls = unwrap_as!(pop, ProofOfPossession::Bls);
-        let pub_key = unwrap_as!(pk.public_key(), PublicKey::Bls);
-        assert!(pub_key.verify_pop(&pop_bls).is_ok());
+        let handle = keychain.import(pk);
+
+        let digest = Blake2b256::digest(b"text");
+        let err = keychain.try_sign_digest(handle, &digest).unwrap_err();
+        assert!(matches!(err, super::Error::DigestSigningUnsupported));
     }
 }

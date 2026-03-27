@@ -6,10 +6,7 @@ use std::env;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conf = app::Config {
-        listen_port: env::var("LISTEN_PORT")
-            .ok()
-            .map(|s| s.parse().ok())
-            .flatten(),
+        listen_port: env::var("LISTEN_PORT").ok().and_then(|s| s.parse().ok()),
     };
 
     let app = app::App::init(conf)?;

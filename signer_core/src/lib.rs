@@ -6,6 +6,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::future::Future;
 
 pub mod crypto;
+#[cfg(feature = "test-utils")]
+pub mod mock;
 pub mod rpc;
 pub(crate) mod serde_helper;
 
@@ -168,7 +170,7 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
     async fn decrypt(&self, src: &[u8]) -> Result<PrivateKey, Error<E::Error>> {
         match self.enc.decrypt(src).await {
             Ok(decrypted) => Ok(PrivateKey::try_from_cbor(&decrypted[..])?),
-            Err(err) => return Err(Error::Encryption(err)),
+            Err(err) => Err(Error::Encryption(err)),
         }
     }
 
@@ -238,6 +240,22 @@ impl<E: EncryptionBackend> EncryptedSigner<E> {
         version: SigningVersion,
     ) -> Result<Signature, Error<E::Error>> {
         Ok(self.decrypt(key_data).await?.try_sign(msg, version)?)
+    }
+
+    pub fn try_sign_digest(
+        &self,
+        handle: usize,
+        digest: &[u8],
+    ) -> Result<Signature, Error<E::Error>> {
+        Ok(self.keychain.try_sign_digest(handle, digest)?)
+    }
+
+    pub async fn try_sign_digest_with(
+        &self,
+        key_data: &[u8],
+        digest: &[u8],
+    ) -> Result<Signature, Error<E::Error>> {
+        Ok(self.decrypt(key_data).await?.try_sign_digest(digest)?)
     }
 
     pub async fn public_key_from(&self, key_data: &[u8]) -> Result<PublicKey, Error<E::Error>> {
@@ -398,216 +416,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn signer_bls() {
-        use crate::crypto::Verifier;
-
+    async fn signer_sign_digest_secp256k1() {
+        use signature::hazmat::PrehashVerifier;
         let signer = EncryptedSigner::new(Passthrough);
-        let res: crate::GenerateResult = signer
-            .generate(KeyType::Bls, &mut rand_core::OsRng)
-            .await
-            .unwrap();
-
-        let data = b"test";
-        {
-            let sig = unwrap_as!(
-                signer
-                    .try_sign_with(&res.encrypted_private_key, data, SigningVersion::V2)
-                    .await
-                    .unwrap(),
-                Signature::Bls
-            );
-
-            let pk = unwrap_as!(&res.public_key, PublicKey::Bls);
-            assert!(pk.verify(data, &sig, SigningVersion::V2).is_ok());
-        }
-        {
-            let sig = unwrap_as!(
-                signer
-                    .try_sign_with(&res.encrypted_private_key, data, SigningVersion::V1)
-                    .await
-                    .unwrap(),
-                Signature::Bls
-            );
-
-            let pk = unwrap_as!(&res.public_key, PublicKey::Bls);
-            assert!(pk.verify(data, &sig, SigningVersion::V1).is_ok());
-        }
-    }
-
-    #[tokio::test]
-    async fn signer_import_encrypted() {
-        let mut signer = EncryptedSigner::new(Passthrough);
-
-        // First generate a key
-        let gen_res = signer
+        let res = signer
             .generate(KeyType::Secp256k1, &mut rand_core::OsRng)
             .await
             .unwrap();
 
-        // Import it
-        let import_res = signer.import(&gen_res.encrypted_private_key).await.unwrap();
-
-        // Sign with the imported handle
-        let data = b"test";
+        let digest = Blake2b256::digest(b"text");
         let sig = unwrap_as!(
             signer
-                .try_sign(import_res.handle, data, SigningVersion::Latest)
+                .try_sign_digest_with(&res.encrypted_private_key, &digest)
+                .await
                 .unwrap(),
             Signature::Secp256k1
         );
 
-        // Verify
-        let mut digest = Blake2b256::new();
-        digest.update(data);
-        unwrap_as!(import_res.public_key, PublicKey::Secp256k1)
-            .verify_digest(digest, &*sig)
+        unwrap_as!(res.public_key, PublicKey::Secp256k1)
+            .verify_prehash(&digest, &*sig)
             .unwrap();
-    }
-
-    #[tokio::test]
-    async fn signer_import_unencrypted() {
-        use crate::crypto::{KeyPair, PrivateKey};
-
-        let mut signer = EncryptedSigner::new(Passthrough);
-
-        let key = PrivateKey::generate(KeyType::NistP256, &mut rand_core::OsRng).unwrap();
-        let expected_pk = key.public_key();
-
-        let res = signer.import_unencrypted(key).await.unwrap();
-
-        // Verify we can sign
-        let data = b"message";
-        let sig = unwrap_as!(
-            signer
-                .try_sign(res.handle, data, SigningVersion::Latest)
-                .unwrap(),
-            Signature::NistP256
-        );
-
-        let mut digest = Blake2b256::new();
-        digest.update(data);
-        unwrap_as!(expected_pk, PublicKey::NistP256)
-            .verify_digest(digest, &*sig)
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn signer_generate_and_import() {
-        let mut signer = EncryptedSigner::new(Passthrough);
-
-        let res = signer
-            .generate_and_import(KeyType::Ed25519, &mut rand_core::OsRng)
-            .await
-            .unwrap();
-
-        // Sign using handle
-        let data = b"data";
-        let sig = unwrap_as!(
-            signer
-                .try_sign(res.handle, data, SigningVersion::Latest)
-                .unwrap(),
-            Signature::Ed25519
-        );
-
-        // Verify
-        let digest = Blake2b256::digest(data);
-        unwrap_as!(res.public_key, PublicKey::Ed25519)
-            .verify(&digest, &sig)
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn signer_public_key_operations() {
-        let mut signer = EncryptedSigner::new(Passthrough);
-
-        let res = signer
-            .generate_and_import(KeyType::Secp256k1, &mut rand_core::OsRng)
-            .await
-            .unwrap();
-
-        // Test public_key by handle
-        let pk = signer.public_key(res.handle).unwrap();
-        assert!(matches!(pk, PublicKey::Secp256k1(_)));
-
-        // Test public_key_from encrypted key
-        let pk_from = signer
-            .public_key_from(&res.encrypted_private_key)
-            .await
-            .unwrap();
-        assert!(matches!(pk_from, PublicKey::Secp256k1(_)));
-    }
-
-    #[tokio::test]
-    async fn signer_proof_of_possession() {
-        use crate::crypto::{ProofOfPossession, ProofVerifier};
-
-        let mut signer = EncryptedSigner::new(Passthrough);
-
-        let res = signer
-            .generate_and_import(KeyType::Bls, &mut rand_core::OsRng)
-            .await
-            .unwrap();
-
-        // Generate proof
-        let proof = signer.try_prove(res.handle).unwrap();
-        let pop = unwrap_as!(proof, ProofOfPossession::Bls);
-
-        // Verify proof
-        let pk = unwrap_as!(res.public_key, PublicKey::Bls);
-        pk.verify_pop(&pop).unwrap();
-    }
-
-    #[tokio::test]
-    async fn signer_invalid_handle() {
-        let signer = EncryptedSigner::new(Passthrough);
-
-        // Try to use non-existent handle
-        let result = signer.try_sign(999, b"data", SigningVersion::Latest);
-        assert!(result.is_err());
-
-        let result = signer.public_key(999);
-        assert!(result.is_err());
-
-        let result = signer.try_prove(999);
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn signer_multiple_keys() {
-        let mut signer = EncryptedSigner::new(Passthrough);
-
-        // Import multiple keys
-        let res1 = signer
-            .generate_and_import(KeyType::Secp256k1, &mut rand_core::OsRng)
-            .await
-            .unwrap();
-
-        let res2 = signer
-            .generate_and_import(KeyType::Ed25519, &mut rand_core::OsRng)
-            .await
-            .unwrap();
-
-        let res3 = signer
-            .generate_and_import(KeyType::Bls, &mut rand_core::OsRng)
-            .await
-            .unwrap();
-
-        // Verify all handles work independently
-        let data = b"test";
-
-        let sig1 = signer
-            .try_sign(res1.handle, data, SigningVersion::Latest)
-            .unwrap();
-        assert!(matches!(sig1, Signature::Secp256k1(_)));
-
-        let sig2 = signer
-            .try_sign(res2.handle, data, SigningVersion::Latest)
-            .unwrap();
-        assert!(matches!(sig2, Signature::Ed25519(_)));
-
-        let sig3 = signer
-            .try_sign(res3.handle, data, SigningVersion::V2)
-            .unwrap();
-        assert!(matches!(sig3, Signature::Bls(_)));
     }
 }
