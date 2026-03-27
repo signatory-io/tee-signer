@@ -159,6 +159,44 @@ SignWithRequest = {
 SignWithResult = Signature
 ```
 
+### SignDigest
+
+Sign a pre-hashed digest with the key stored under the specified index. Unlike `Sign`, no blockchain-specific hashing (e.g., Blake2b) is applied before signing.
+
+Supported key types: Secp256k1, NistP256, Ed25519. BLS returns an error (`DigestSigningUnsupported`) because BLS signs full messages via hash-to-curve.
+
+For ECDSA (Secp256k1, NistP256), the digest is used directly as the prehash input — no additional hashing occurs. For Ed25519, the digest is treated as a standard Ed25519 message (SHA-512 hashing occurs internally per RFC 8032); this is inherent to the algorithm.
+
+```text
+SignDigestRequest = {
+    SignDigest: {
+        handle: unsigned,
+        digest: bytes,
+    },
+}
+
+SignDigestResult = Signature
+```
+
+### SignDigestWith
+
+Sign a pre-hashed digest with the provided encrypted private key. Same semantics as `SignDigest`.
+
+```text
+SignDigestWithRequest = {
+    SignDigestWith: {
+        encrypted_private_key: bytes,
+        digest: bytes,
+    },
+}
+
+SignDigestWithResult = Signature
+```
+
+### Compatibility
+
+`SignDigest` and `SignDigestWith` were added in the same release as this RPC documentation update. Sending these requests to an older TEE signer that does not recognize the CBOR variants will result in a deserialization error returned as an `Err` response with a generic error message. Clients should ensure the TEE signer image is updated before using these operations.
+
 ### PublicKey
 
 Return the public key corresponding to the key pair stored under the given index.

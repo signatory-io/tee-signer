@@ -1,5 +1,5 @@
-use google_cloud_kms_v1::client::KeyManagementService;
 use google_cloud_auth::credentials::external_account;
+use google_cloud_kms_v1::client::KeyManagementService;
 use serde::{Deserialize, Serialize};
 use signer_core::{EncryptionBackend, EncryptionBackendFactory};
 

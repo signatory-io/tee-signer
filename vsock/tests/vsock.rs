@@ -56,21 +56,19 @@ mod linux {
                 }
             }
         });
-        
+
         let data1: &[u8; 8] = b"dataone1";
         let data2: &[u8; 8] = b"datatwo2";
 
         // First connection
-        let client1 =
-            SyncStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, loc.port())).unwrap();
+        let client1 = SyncStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, loc.port())).unwrap();
         client1.send(data1).unwrap();
         let mut buf1: [u8; 8] = [0; 8];
         let sz1 = client1.recv(&mut buf1).unwrap();
         assert_eq!(&buf1[0..sz1], data1);
 
         // Second connection
-        let client2 =
-            SyncStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, loc.port())).unwrap();
+        let client2 = SyncStream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, loc.port())).unwrap();
         client2.send(data2).unwrap();
         let mut buf2: [u8; 8] = [0; 8];
         let sz2 = client2.recv(&mut buf2).unwrap();

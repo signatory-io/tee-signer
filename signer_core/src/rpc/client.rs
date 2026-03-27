@@ -167,6 +167,30 @@ where
         .await
     }
 
+    pub async fn try_sign_digest(
+        &mut self,
+        handle: usize,
+        digest: &[u8],
+    ) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::SignDigest {
+            handle,
+            digest: digest.into(),
+        })
+        .await
+    }
+
+    pub async fn try_sign_digest_with(
+        &mut self,
+        key_data: &[u8],
+        digest: &[u8],
+    ) -> Result<Signature, Error> {
+        self.round_trip::<Signature>(Request::SignDigestWith {
+            encrypted_private_key: key_data.into(),
+            digest: digest.into(),
+        })
+        .await
+    }
+
     pub async fn public_key(&mut self, handle: usize) -> Result<PublicKey, Error> {
         self.round_trip::<PublicKey>(Request::PublicKey(handle))
             .await
