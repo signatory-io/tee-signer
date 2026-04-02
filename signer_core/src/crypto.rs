@@ -1,8 +1,7 @@
 use blake2::{digest, Blake2b, Digest};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
-use serde_repr::Deserialize_repr;
-use serde_repr::Serialize_repr;
+use serde_repr::{Deserialize_repr, Serialize_repr};
 pub use signature::Error as SignatureError;
 use signature::{DigestSigner, Signer};
 use std::fmt::Debug;
@@ -375,10 +374,11 @@ impl Keychain {
 #[cfg(test)]
 mod tests {
     use super::{
-        Blake2b256, Digest, KeyType, Keychain, PrivateKey, PublicKey, Signature, SigningVersion,
+        Blake2b256, Digest, Error, KeyType, Keychain, PossessionProver, PrivateKey,
+        ProofOfPossession, PublicKey, Signature, SigningVersion,
     };
     use crate::{
-        crypto::{KeyPair, ProofOfPossession, ProofVerifier, Verifier},
+        crypto::{KeyPair, ProofVerifier, Verifier},
         macros::unwrap_as,
         TryFromCBOR, TryIntoCBOR,
     };
@@ -439,6 +439,22 @@ mod tests {
     impl_sig_serde_test!(serde_sig_ed25519, Ed25519);
     impl_sig_serde_test!(serde_sig_bls, Bls);
 
+    macro_rules! impl_pop_test {
+        ($name:ident, $ty:tt, $result:pat) => {
+            #[test]
+            fn $name() {
+                let pk = PrivateKey::generate(KeyType::$ty, &mut rand_core::OsRng).unwrap();
+                let sig = pk.try_prove();
+                assert!(matches!(sig, $result));
+            }
+        };
+    }
+
+    impl_pop_test!(pop_secp256k1, Secp256k1, Err(Error::PopUnsupported));
+    impl_pop_test!(pop_nist_p256, NistP256, Err(Error::PopUnsupported));
+    impl_pop_test!(pop_ed25519, Ed25519, Err(Error::PopUnsupported));
+    impl_pop_test!(pop_bls, Bls, Ok(ProofOfPossession::Bls(_)));
+
     #[test]
     fn keychain_secp256k1() {
         let mut keychain = Keychain::new();
@@ -498,22 +514,6 @@ mod tests {
 
         let digest = Blake2b256::digest(data);
         pub_key.verify(&digest, &sig).unwrap();
-    }
-
-    #[test]
-    fn keychain_bls_v1() {
-        let mut keychain = Keychain::new();
-        let pk = PrivateKey::generate(KeyType::Bls, &mut rand_core::OsRng).unwrap();
-        let handle = keychain.import(pk);
-
-        let data = b"text";
-        let sig = unwrap_as!(
-            keychain.try_sign(handle, data, SigningVersion::V1).unwrap(),
-            Signature::Bls
-        );
-        let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
-
-        pub_key.verify(data, &sig, SigningVersion::V1).unwrap();
     }
 
     #[test]

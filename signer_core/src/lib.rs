@@ -278,6 +278,7 @@ pub(crate) mod macros {
         ($target: expr, $pat: path) => {
             match $target {
                 $pat(a) => a,
+                #[allow(unreachable_patterns)]
                 _ => {
                     panic!(
                         "{} doesn't match the pattern {}",

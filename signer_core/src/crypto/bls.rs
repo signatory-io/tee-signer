@@ -142,7 +142,6 @@ impl Verifier<Signature> for PublicKey {
         version: SigningVersion,
     ) -> Result<(), crypto::Error> {
         let blst_error = match version {
-            SigningVersion::V0 => Err(crypto::Error::InvalidSigningVersion),
             SigningVersion::V1 => {
                 let aug = self.to_bytes();
                 let cipher_suite: Vec<u8> =
@@ -158,13 +157,11 @@ impl Verifier<Signature> for PublicKey {
                     .0
                     .verify(true, msg, &cipher_suite, &[], self, true))
             }
+            _ => Err(crypto::Error::InvalidSigningVersion),
         }?;
         match blst_error {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
-            err => {
-                let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
-                Err(crypto::Error::Signature(b.into()))
-            }
+            err => Err(Error::from(err).into()),
         }
     }
 }
@@ -178,10 +175,7 @@ impl ProofVerifier<ProofOfPossession> for PublicKey {
             .verify(true, &self.to_bytes(), &cipher_suite, &[], self, true)
         {
             blst::BLST_ERROR::BLST_SUCCESS => Ok(()),
-            err => {
-                let b: Box<dyn std::error::Error + Send + Sync> = Box::new(Error::from(err));
-                Err(crypto::Error::Signature(b.into()))
-            }
+            err => Err(Error::from(err).into()),
         }
     }
 }
@@ -243,7 +237,6 @@ impl KeyPair for SigningKey {
         version: SigningVersion,
     ) -> Result<Self::Signature, Self::Error> {
         match version {
-            SigningVersion::V0 => Err(crypto::Error::InvalidSigningVersion),
             SigningVersion::V1 => {
                 let aug = self.sk_to_pk().to_bytes();
                 let cipher_suite: Vec<u8> =
@@ -255,6 +248,7 @@ impl KeyPair for SigningKey {
                     CipherSuite::Signature(2, Scheme::ProofOfPossession).into();
                 Ok(Signature(self.sign(msg, &cipher_suite, &[])))
             }
+            _ => Err(crypto::Error::InvalidSigningVersion),
         }
     }
 
@@ -323,3 +317,142 @@ impl From<BLST_ERROR> for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::{KeyPair, PossessionProver, ProofVerifier, Random, Verifier};
+    use rand_core::OsRng;
+
+    #[test]
+    fn test_key_generation() {
+        let sk = SigningKey::random(&mut OsRng).unwrap();
+        let pk = sk.public_key();
+
+        // Verify we can generate multiple different keys
+        let sk2 = SigningKey::random(&mut OsRng).unwrap();
+        let pk2 = sk2.public_key();
+
+        assert_ne!(pk.compress(), pk2.compress());
+    }
+
+    macro_rules! test_sign_and_verify {
+        ($name:ident, $version:expr) => {
+            #[test]
+            fn $name() {
+                let sk = SigningKey::random(&mut OsRng).unwrap();
+                let pk = sk.public_key();
+                let msg = b"test message";
+
+                let sig = sk.try_sign(msg, $version).unwrap();
+                assert!(pk.verify(msg, &sig, $version).is_ok());
+            }
+        };
+    }
+
+    test_sign_and_verify!(test_sign_and_verify_v1, SigningVersion::V1);
+    test_sign_and_verify!(test_sign_and_verify_v2, SigningVersion::V2);
+    test_sign_and_verify!(test_sign_and_verify_latest, SigningVersion::Latest);
+
+    #[test]
+    fn test_verify_wrong_message() {
+        let sk = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let pk = sk.public_key();
+
+        let sig = sk
+            .try_sign(b"correct message", SigningVersion::V2)
+            .expect("signing failed");
+        let result = pk.verify(b"wrong message", &sig, SigningVersion::V2);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_wrong_key() {
+        let sk1 = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let sk2 = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let pk2 = sk2.public_key();
+        let msg = b"test message";
+
+        let sig = sk1
+            .try_sign(msg, SigningVersion::V2)
+            .expect("signing failed");
+        let result = pk2.verify(msg, &sig, SigningVersion::V2);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_proof_of_possession_wrong_key() {
+        let sk1 = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let sk2 = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let pk2 = sk2.public_key();
+
+        let proof = sk1.try_prove().expect("proof generation failed");
+        let result = pk2.verify_pop(&proof);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_signature_serialization() {
+        let sk = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let msg = b"test message";
+        let sig = sk
+            .try_sign(msg, SigningVersion::V2)
+            .expect("signing failed");
+
+        let mut serialized = Vec::new();
+        ciborium::into_writer(&sig, &mut serialized).expect("serialization failed");
+        let deserialized: Signature =
+            ciborium::from_reader(&serialized[..]).expect("deserialization failed");
+
+        assert_eq!(sig.compress(), deserialized.compress());
+    }
+
+    #[test]
+    fn test_public_key_serialization() {
+        let sk = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let pk = sk.public_key();
+
+        let mut serialized = Vec::new();
+        ciborium::into_writer(&pk, &mut serialized).expect("serialization failed");
+        let deserialized: PublicKey =
+            ciborium::from_reader(&serialized[..]).expect("deserialization failed");
+
+        assert_eq!(pk.compress(), deserialized.compress());
+    }
+
+    #[test]
+    fn test_signing_key_serialization() {
+        let sk = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let msg = b"test message";
+
+        let mut serialized = Vec::new();
+        ciborium::into_writer(&sk, &mut serialized).expect("serialization failed");
+        let deserialized: SigningKey =
+            ciborium::from_reader(&serialized[..]).expect("deserialization failed");
+
+        let sig1 = sk
+            .try_sign(msg, SigningVersion::V2)
+            .expect("signing failed");
+        let sig2 = deserialized
+            .try_sign(msg, SigningVersion::V2)
+            .expect("signing failed");
+
+        assert_eq!(sig1.compress(), sig2.compress());
+    }
+
+    #[test]
+    fn test_proof_serialization() {
+        let sk = SigningKey::random(&mut OsRng).expect("key generation failed");
+        let proof = sk.try_prove().expect("proof generation failed");
+
+        let mut serialized = Vec::new();
+        ciborium::into_writer(&proof, &mut serialized).expect("serialization failed");
+        let deserialized: ProofOfPossession =
+            ciborium::from_reader(&serialized[..]).expect("deserialization failed");
+
+        assert_eq!(proof.compress(), deserialized.compress());
+    }
+}
