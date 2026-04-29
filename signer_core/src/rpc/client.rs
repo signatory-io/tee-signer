@@ -43,10 +43,10 @@ impl From<ciborium::ser::Error<std::io::Error>> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::IO(error) => write!(f, "IO error: {}", error),
-            Error::RPC(error) => write!(f, "RPC error: {}", error),
-            Error::Serialize(error) => write!(f, "serialization error: {}", error),
-            Error::Deserialize(error) => write!(f, "deserialization error: {}", error),
+            Error::IO(error) => write!(f, "IO error: {error}"),
+            Error::RPC(error) => write!(f, "RPC error: {error}"),
+            Error::Serialize(error) => write!(f, "serialization error: {error}"),
+            Error::Deserialize(error) => write!(f, "deserialization error: {error}"),
         }
     }
 }

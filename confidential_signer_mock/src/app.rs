@@ -18,7 +18,7 @@ impl From<io::Error> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::IO(error) => write!(f, "IO error: {}", error),
+            Error::IO(error) => write!(f, "IO error: {error}"),
         }
     }
 }
@@ -32,7 +32,7 @@ impl App {
                 let mut srv = Server::new(PassthroughFactory, rand_core::OsRng);
 
                 if let Err(err) = srv.serve_connection(conn).await {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                 }
             });
         }

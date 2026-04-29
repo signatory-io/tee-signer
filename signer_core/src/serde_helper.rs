@@ -17,7 +17,7 @@ impl<'a, const T: usize> Visitor<'a> for ByteArrayVisitor<T> {
     type Value = [u8; T];
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "a byte array of size {}", T)
+        write!(formatter, "a byte array of size {T}")
     }
 
     fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
@@ -66,7 +66,8 @@ impl<'a> Visitor<'a> for BytesVisitor {
     type Value = Vec<u8>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "a byte array of size {}", self.0)
+        let size = self.0;
+        write!(formatter, "a byte array of size {size}")
     }
 
     fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>

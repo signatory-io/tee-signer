@@ -219,10 +219,7 @@ impl KeyPair for PrivateKey {
             PrivateKey::Ed25519(val) => KeyPair::try_sign_digest(val, digest)
                 .map(Into::into)
                 .map_err(Into::into),
-            PrivateKey::Bls(val) => val
-                .try_sign_digest(digest)
-                .map(Into::into)
-                .map_err(Into::into),
+            PrivateKey::Bls(val) => val.try_sign_digest(digest).map(Into::into),
         }
     }
 
@@ -539,7 +536,7 @@ mod tests {
         let handle = keychain.import(pk);
 
         let pub_key = unwrap_as!(keychain.public_key(handle).unwrap(), PublicKey::Bls);
-        let sig = unwrap_as!(keychain.try_prove(handle).unwrap(), ProofOfPossession::Bls);
+        let ProofOfPossession::Bls(sig) = keychain.try_prove(handle).unwrap();
 
         pub_key.verify_pop(&sig).unwrap();
     }

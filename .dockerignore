@@ -1,0 +1,10 @@
+.git
+.github
+target
+dist
+.idea
+.vscode
+.DS_Store
+*.eif
+*.pem
+*.key

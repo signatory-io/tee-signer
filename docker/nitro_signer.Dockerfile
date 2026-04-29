@@ -1,8 +1,10 @@
 ARG BASE_IMAGE=public.ecr.aws/amazonlinux/amazonlinux:2
+ARG RUST_VERSION=1.95.0
 
 FROM $BASE_IMAGE AS builder
 
 ARG RELEASE
+ARG RUST_VERSION
 
 RUN yum install -y \
     gcc \
@@ -10,7 +12,7 @@ RUN yum install -y \
     tar \
     make
 
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
 
 COPY . /tee-signer
 RUN source $HOME/.cargo/env && cd tee-signer && cargo build ${RELEASE:+--release} --bin nitro_signer_app

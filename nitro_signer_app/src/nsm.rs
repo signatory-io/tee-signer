@@ -133,7 +133,7 @@ impl RngCore for SharedNSM {
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
         if let Err(err) = self.try_fill_bytes(dest) {
-            panic!("NSM::fill_bytes(): {}", err);
+            panic!("NSM::fill_bytes(): {err}");
         }
     }
 
