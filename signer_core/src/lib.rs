@@ -305,11 +305,8 @@ mod tests {
     impl EncryptionBackendFactory for PassthroughFactory {
         type Output = Passthrough;
         type Credentials = DummyCredentials;
-        fn try_new(
-            &self,
-            _cred: Self::Credentials,
-        ) -> impl std::future::Future<Output = Result<Self::Output, DummyErr>> {
-            async { Ok(Passthrough) }
+        async fn try_new(&self, _cred: Self::Credentials) -> Result<Self::Output, DummyErr> {
+            Ok(Passthrough)
         }
     }
 

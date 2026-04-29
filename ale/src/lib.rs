@@ -336,10 +336,10 @@ impl std::fmt::Display for Error {
             Error::EOS => f.write_str("unexpected end of stream"),
             Error::ValueTooLarge => f.write_str("value is too large"),
             Error::Encoding => f.write_str("invalid encoding"),
-            Error::Tag(tag) => write!(f, "unexpected tag: {:x}", tag),
+            Error::Tag(tag) => write!(f, "unexpected tag: {tag:x}"),
             Error::Infinite => f.write_str("infinite length"),
-            Error::Convert(err) => write!(f, "convert error: {}", err),
-            Error::Length(len) => write!(f, "invalid length: {}", len),
+            Error::Convert(err) => write!(f, "convert error: {err}"),
+            Error::Length(len) => write!(f, "invalid length: {len}"),
             Error::Overflow => f.write_str("overflow"),
         }
     }

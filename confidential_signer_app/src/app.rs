@@ -23,7 +23,7 @@ impl From<io::Error> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::IO(error) => write!(f, "IO error: {}", error),
+            Error::IO(error) => write!(f, "IO error: {error}"),
         }
     }
 }
@@ -50,7 +50,7 @@ impl App {
         );
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        println!("Listening on {}", addr);
+        println!("Listening on {addr}");
         loop {
             let (conn, _) = listener.accept().await?;
 
@@ -59,7 +59,7 @@ impl App {
                 let mut srv = Server::new(cf, self.rng);
 
                 if let Err(err) = srv.serve_connection(conn).await {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                 }
             });
         }

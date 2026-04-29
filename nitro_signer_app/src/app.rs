@@ -40,9 +40,9 @@ impl From<io::Error> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NSM(error) => write!(f, "NSM error: {}", error),
-            Error::RSA(error) => write!(f, "RSA error: {}", error),
-            Error::IO(error) => write!(f, "IO error: {}", error),
+            Error::NSM(error) => write!(f, "NSM error: {error}"),
+            Error::RSA(error) => write!(f, "RSA error: {error}"),
+            Error::IO(error) => write!(f, "IO error: {error}"),
         }
     }
 }
@@ -91,7 +91,7 @@ impl App {
         let listener = vsock::asio::Listener::bind(&listen_addr)?;
         loop {
             let (conn, addr) = listener.accept().await?;
-            println!("incoming connection from {}", addr);
+            println!("incoming connection from {addr}");
 
             let ccfg = client_conf.clone();
             let secm = self.secm.clone();
@@ -101,7 +101,7 @@ impl App {
                 let mut srv = Server::new(cf, secm);
 
                 if let Err(err) = srv.serve_connection(conn).await {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                 }
             });
         }

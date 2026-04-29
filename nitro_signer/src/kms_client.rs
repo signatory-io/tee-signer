@@ -311,16 +311,16 @@ where
             Error::ZeroOutput => f.write_str("zero output"),
             Error::Ber(_) => f.write_str("BER error"),
             Error::ContentType(object_identifier) => {
-                write!(f, "unexpected content type: {}", object_identifier)
+                write!(f, "unexpected content type: {object_identifier}")
             }
-            Error::Version(cms_version) => write!(f, "unexpected CMS version: {:?}", cms_version),
+            Error::Version(cms_version) => write!(f, "unexpected CMS version: {cms_version:?}"),
             Error::Algorithm(object_identifier) => {
-                write!(f, "unexpected encryption algorithm: {}", object_identifier)
+                write!(f, "unexpected encryption algorithm: {object_identifier}")
             }
             Error::MissingData => f.write_str("some data is missing"),
             Error::Rsa(_) => f.write_str("RSA error"),
-            Error::KeySize(v) => write!(f, "invalid key size: {}", v),
-            Error::IvSize(v) => write!(f, "invalid iv size: {}", v),
+            Error::KeySize(v) => write!(f, "invalid key size: {v}"),
+            Error::IvSize(v) => write!(f, "invalid iv size: {v}"),
             Error::Unpad => f.write_str("unpad error"),
         }
     }

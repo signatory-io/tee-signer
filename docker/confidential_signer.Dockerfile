@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=rust:1.88-slim
+ARG BASE_IMAGE=rust:1.95-trixie
 
 FROM $BASE_IMAGE AS builder
 

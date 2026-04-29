@@ -53,9 +53,9 @@ impl From<ciborium::ser::Error<std::io::Error>> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::IO(error) => write!(f, "IO error: {}", error),
-            Error::Serialize(error) => write!(f, "serialization error: {}", error),
-            Error::Deserialize(error) => write!(f, "deserialization error: {}", error),
+            Error::IO(error) => write!(f, "IO error: {error}"),
+            Error::Serialize(error) => write!(f, "serialization error: {error}"),
+            Error::Deserialize(error) => write!(f, "deserialization error: {error}"),
         }
     }
 }
@@ -108,8 +108,7 @@ where
                 break Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "message size {} exceeds maximum {}",
-                        len,
+                        "message size {len} exceeds maximum {}",
                         crate::rpc::MAX_MESSAGE_SIZE
                     ),
                 )
@@ -136,7 +135,7 @@ where
             Ok(req) => req,
             Err(err) => {
                 // return deserialization error to the client
-                println!("invalid request: {}", err);
+                println!("invalid request: {err}");
                 return RPCResult::<()>::Err(err.into())
                     .try_into_writer(buf)
                     .map_err(Into::into)

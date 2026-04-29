@@ -65,7 +65,7 @@ impl<T: std::error::Error> From<T> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.source {
-            Some(src) => write!(f, "{}: {}", &self.message, src),
+            Some(src) => write!(f, "{}: {src}", &self.message),
             None => f.write_str(&self.message),
         }
     }

@@ -45,10 +45,7 @@ mod linux {
                         conn.recv(&mut buf).unwrap();
                         conn.send(&buf).unwrap();
                     }
-                    Err(err) => {
-                        eprint!("error: {}", err);
-                        assert!(false);
-                    }
+                    Err(err) => panic!("error: {err}"),
                 }
                 count += 1;
                 if count == 2 {
@@ -113,14 +110,14 @@ mod linux {
 
                 let mut buf: [u8; 8] = [0; 8];
                 conn.read_exact(&mut buf).await.unwrap();
-                conn.write(&buf).await.unwrap();
+                conn.write_all(&buf).await.unwrap();
             },
             async {
                 let data: &[u8; 8] = b"datadata";
                 let mut client = Stream::connect(&SocketAddr::new(VMADDR_CID_LOCAL, loc.port()))
                     .await
                     .unwrap();
-                client.write(data).await.unwrap();
+                client.write_all(data).await.unwrap();
                 let mut buf: [u8; 8] = [0; 8];
                 let sz = client.read_exact(&mut buf).await.unwrap();
                 assert_eq!(&buf[0..sz], data);

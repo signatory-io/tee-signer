@@ -10,11 +10,11 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Credentials(e) => write!(f, "Credentials error: {}", e),
-            Error::Auth(e) => write!(f, "Auth error: {}", e),
-            Error::Encryption(e) => write!(f, "Encryption error: {}", e),
-            Error::Decryption(e) => write!(f, "Decryption error: {}", e),
-            Error::CredentialFormat(msg) => write!(f, "Credential format error: {}", msg),
+            Error::Credentials(e) => write!(f, "Credentials error: {e}"),
+            Error::Auth(e) => write!(f, "Auth error: {e}"),
+            Error::Encryption(e) => write!(f, "Encryption error: {e}"),
+            Error::Decryption(e) => write!(f, "Decryption error: {e}"),
+            Error::CredentialFormat(msg) => write!(f, "Credential format error: {msg}"),
         }
     }
 }
